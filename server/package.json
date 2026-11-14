@@ -1,0 +1,17 @@
+{
+  "name": "journal-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private journal API: encrypted text and transcribed voice entries, read by the weekly review.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "db:migrate": "node src/migrate.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "apple-signin-auth": "^1.7.3",
+    "pg": "^8.22.0"
+  }
+}
