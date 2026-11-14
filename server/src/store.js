@@ -17,20 +17,27 @@ function newer(incoming, existing) {
 export class MemoryStore {
   constructor() {
     this.users = new Map();
+    this.identities = new Map(); // "provider:subject" -> userId
     this.sessions = new Map();
     this.entries = new Map();
     this.revision = 0;
   }
 
-  async upsertUserByApple({ appleSub, email }) {
-    for (const user of this.users.values()) {
-      if (user.appleSub === appleSub) {
-        user.email = email;
-        return { ...user };
-      }
+  // Finds the user for a sign-in identity, linking it to the user with the same
+  // verified email, or creating one. Unverified emails never link accounts.
+  async upsertUserByIdentity({ provider, subject, email, emailVerified }) {
+    const key = `${provider}:${subject}`;
+    let user = this.users.get(this.identities.get(key));
+    if (!user && emailVerified) {
+      const wanted = email.toLowerCase();
+      user = [...this.users.values()].find((u) => u.email.toLowerCase() === wanted);
     }
-    const user = { id: crypto.randomUUID(), appleSub, email, createdAt: new Date().toISOString() };
-    this.users.set(user.id, user);
+    if (!user) {
+      user = { id: crypto.randomUUID(), email, createdAt: new Date().toISOString() };
+      this.users.set(user.id, user);
+    }
+    this.identities.set(key, user.id);
+    if (emailVerified) user.email = email;
     return { ...user };
   }
 
@@ -113,6 +120,7 @@ export class MemoryStore {
 
   async deleteUser(userId) {
     this.users.delete(userId);
+    for (const [key, id] of this.identities) if (id === userId) this.identities.delete(key);
     await this.deleteSessionsForUser(userId);
     for (const [id, e] of this.entries) if (e.userId === userId) this.entries.delete(id);
   }
@@ -149,7 +157,7 @@ function entryFromRow(r) {
 }
 
 function userFromRow(r) {
-  return { id: r.id, appleSub: r.apple_sub, email: r.email, createdAt: iso(r.created_at) };
+  return { id: r.id, email: r.email, createdAt: iso(r.created_at) };
 }
 
 export class PostgresStore {
@@ -163,14 +171,46 @@ export class PostgresStore {
     await this.pool.end();
   }
 
-  async upsertUserByApple({ appleSub, email }) {
-    const { rows } = await this.pool.query(
-      `INSERT INTO journal_users (id, apple_sub, email) VALUES ($1, $2, $3)
-       ON CONFLICT (apple_sub) DO UPDATE SET email = EXCLUDED.email
-       RETURNING *`,
-      [crypto.randomUUID(), appleSub, email]
-    );
-    return userFromRow(rows[0]);
+  async upsertUserByIdentity({ provider, subject, email, emailVerified }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // One sign-in at a time decides linking, so two first sign-ins can't create two users.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('journal-identity'))");
+      let { rows } = await client.query(
+        `SELECT u.* FROM journal_identities i JOIN journal_users u ON u.id = i.user_id
+         WHERE i.provider = $1 AND i.subject = $2`,
+        [provider, subject]
+      );
+      if (!rows[0] && emailVerified) {
+        ({ rows } = await client.query(
+          "SELECT * FROM journal_users WHERE lower(email) = lower($1) ORDER BY created_at LIMIT 1",
+          [email]
+        ));
+      }
+      if (!rows[0]) {
+        ({ rows } = await client.query(
+          "INSERT INTO journal_users (id, email) VALUES ($1, $2) RETURNING *",
+          [crypto.randomUUID(), email]
+        ));
+      }
+      const userId = rows[0].id;
+      await client.query(
+        `INSERT INTO journal_identities (provider, subject, user_id) VALUES ($1, $2, $3)
+         ON CONFLICT (provider, subject) DO NOTHING`,
+        [provider, subject, userId]
+      );
+      if (emailVerified) {
+        ({ rows } = await client.query("UPDATE journal_users SET email = $2 WHERE id = $1 RETURNING *", [userId, email]));
+      }
+      await client.query("COMMIT");
+      return userFromRow(rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getUser(id) {

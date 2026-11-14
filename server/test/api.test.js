@@ -17,6 +17,7 @@ function baseEnv(extra = {}) {
     JOURNAL_DATA_KEYS: `1:${KEY}`,
     SESSION_SECRET: "x".repeat(40),
     APPLE_BUNDLE_ID: "com.jimgreco.journal",
+    GOOGLE_CLIENT_ID: "test.apps.googleusercontent.com",
     ALLOWED_EMAILS: OWNER,
     WEEKLY_SUMMARY_TOKEN_SHA256: sha256Hex(WEEKLY_TOKEN),
     WEEKLY_SUMMARY_EMAIL: OWNER,
@@ -30,10 +31,11 @@ async function fakeApple(token) {
   if (claims.invalid) throw new Error("bad signature");
   return claims;
 }
+const fakeGoogle = fakeApple;
 
 async function startServer(store, env = baseEnv(), now) {
   const config = loadConfig(env);
-  const server = http.createServer(createApp({ store, config, verifyAppleToken: fakeApple, now }));
+  const server = http.createServer(createApp({ store, config, verifyAppleToken: fakeApple, verifyGoogleToken: fakeGoogle, now }));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const call = async (method, path, { body, token } = {}) => {
@@ -71,7 +73,7 @@ if (pgURL) {
   stores.push(["postgres", async () => {
     const admin = new pg.Client({ connectionString: pgURL });
     await admin.connect();
-    await admin.query(`DROP TABLE IF EXISTS journal_entries, journal_sessions, journal_users, app_schema_versions CASCADE;
+    await admin.query(`DROP TABLE IF EXISTS journal_entries, journal_sessions, journal_identities, journal_users, app_schema_versions CASCADE;
       DROP SEQUENCE IF EXISTS journal_entry_revision;`);
     await admin.end();
     await migrate(pgURL);
@@ -123,6 +125,31 @@ for (const [name, makeStore] of stores) {
       const forged = await api.call("POST", "/auth/apple", {
         body: { identityToken: JSON.stringify({ invalid: true }) }
       });
+      assert.equal(forged.status, 401);
+    });
+
+    test("Google sign-in reaches the same journal as Apple via the verified email", async () => {
+      const id = crypto.randomUUID();
+      await api.call("PUT", `/api/entries/${id}`, { token, body: entry({ text: "written after Apple sign-in" }) });
+      const google = await api.call("POST", "/auth/google", {
+        body: { idToken: JSON.stringify({ sub: "google-owner", email: OWNER.toUpperCase(), email_verified: true }) }
+      });
+      assert.equal(google.status, 200);
+      const list = await api.call("GET", "/api/entries", { token: google.body.accessToken });
+      assert.ok(list.body.entries.some((e) => e.id === id), "same account, same entries");
+      const again = await api.call("POST", "/auth/google", {
+        body: { idToken: JSON.stringify({ sub: "google-owner", email: OWNER, email_verified: true }) }
+      });
+      assert.equal(again.body.user.id, google.body.user.id);
+      const stranger = await api.call("POST", "/auth/google", {
+        body: { idToken: JSON.stringify({ sub: "google-x", email: "someone@else.com", email_verified: true }) }
+      });
+      assert.equal(stranger.status, 403);
+      const unverified = await api.call("POST", "/auth/google", {
+        body: { idToken: JSON.stringify({ sub: "google-y", email: OWNER, email_verified: false }) }
+      });
+      assert.equal(unverified.status, 403, "an unverified email is neither allowed nor linked");
+      const forged = await api.call("POST", "/auth/google", { body: { idToken: JSON.stringify({ invalid: true }) } });
       assert.equal(forged.status, 401);
     });
 
@@ -283,6 +310,16 @@ describe("configuration", () => {
     try {
       const res = await api.call("GET", "/api/weekly-summary?week=2026-11-09", { token: WEEKLY_TOKEN });
       assert.equal(res.status, 404);
+    } finally {
+      await api.close();
+    }
+  });
+
+  test("Google sign-in is off until a client id is set", async () => {
+    const api = await startServer(new MemoryStore(), baseEnv({ GOOGLE_CLIENT_ID: "" }));
+    try {
+      const res = await api.call("POST", "/auth/google", { body: { idToken: "{}" } });
+      assert.equal(res.status, 503);
     } finally {
       await api.close();
     }

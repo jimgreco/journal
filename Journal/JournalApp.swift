@@ -1,3 +1,4 @@
+import GoogleSignIn
 import SwiftUI
 
 @main
@@ -6,6 +7,12 @@ struct JournalApp: App {
     @State private var store = EntryStore()
     @State private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        if let clientID = GoogleConfig.clientID {
+            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -19,6 +26,7 @@ struct JournalApp: App {
                         PrivacyCover()
                     }
                 }
+                .onOpenURL { url in GIDSignIn.sharedInstance.handle(url) }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background { lock.lock() }
                     if phase == .active, session.isSignedIn, !lock.isLocked {
@@ -26,6 +34,15 @@ struct JournalApp: App {
                     }
                 }
         }
+    }
+}
+
+enum GoogleConfig {
+    /// The iOS OAuth client id, or nil while project.yml still has its placeholder.
+    static var clientID: String? {
+        guard let id = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String,
+              !id.isEmpty, !id.hasPrefix("YOUR_") else { return nil }
+        return id
     }
 }
 

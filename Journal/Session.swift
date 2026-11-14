@@ -1,5 +1,6 @@
 import AuthenticationServices
 import Foundation
+import GoogleSignIn
 import Observation
 
 enum APIError: LocalizedError {
@@ -11,7 +12,7 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .signedOut: "Your session ended. Sign in again."
-        case .forbidden: "This journal only accepts its owner's Apple ID."
+        case .forbidden: "This journal only accepts its owner's account."
         case .server(let status, let message): message ?? "The server returned \(status)."
         case .offline: "You're offline. Entries are saved on this iPhone and will sync later."
         }
@@ -59,6 +60,10 @@ final class Session {
         await authenticate(path: "/auth/apple", body: ["identityToken": token])
     }
 
+    func signInWithGoogle(idToken: String) async {
+        await authenticate(path: "/auth/google", body: ["idToken": idToken])
+    }
+
     #if DEBUG
     func devSignIn() async {
         await authenticate(path: "/auth/dev", body: ["email": "dev@example.test"])
@@ -84,6 +89,7 @@ final class Session {
     }
 
     func signOut() async {
+        GIDSignIn.sharedInstance.signOut()
         if let refresh = Keychain.read("refreshToken") {
             let _: EmptyResponse? = try? await raw("POST", "/auth/signout", body: ["refreshToken": refresh], token: nil)
         }

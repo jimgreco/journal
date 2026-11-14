@@ -7,7 +7,7 @@ Sunday weekly review unless they are marked private.
 ```
  iPhone app (SwiftUI)                     journal server (EC2, journal.jim-greco.com)
  ┌──────────────────────────────┐ HTTPS  ┌──────────────────────────────────────────┐
- │ Face ID lock                 │ ─────► │ Sign in with Apple, one allowed account  │
+ │ Face ID lock                 │ ─────► │ Apple or Google sign-in, one account     │
  │ on-device speech-to-text     │        │ AES-256-GCM per entry ──► Postgres       │
  │ offline outbox, sync         │        │ GET /api/weekly-summary (own token)      │
  └──────────────────────────────┘        └──────────────────────────────────────────┘
@@ -64,8 +64,9 @@ xcodebuild -project Journal.xcodeproj -scheme Journal -destination 'platform=iOS
 | `DATABASE_URL` | `journal_runtime` connection. Required in production. |
 | `JOURNAL_DATA_KEYS` | `<id>:<base64 32 bytes>[,…]`. The first key encrypts; all decrypt (rotation). Losing it loses every entry: keep a copy offline. |
 | `SESSION_SECRET` | ≥ 32 chars, signs 15-minute access tokens. |
-| `APPLE_BUNDLE_ID` | `com.jimgreco.journal`, the identity-token audience. |
-| `ALLOWED_EMAILS` / `ALLOWED_APPLE_SUBS` | Who may sign in. One is required in production. |
+| `APPLE_BUNDLE_ID` | `com.jimgreco.journal`, the Apple identity-token audience. |
+| `GOOGLE_CLIENT_ID` | The iOS app's Google OAuth client id, the Google ID-token audience. Unset = Google sign-in off. |
+| `ALLOWED_EMAILS` / `ALLOWED_APPLE_SUBS` | Who may sign in (a verified email from Apple or Google, or an Apple sub). One is required in production. Apple and Google sign-ins with the same verified email reach the same journal. |
 | `WEEKLY_SUMMARY_TOKEN_SHA256`, `WEEKLY_SUMMARY_EMAIL` | Weekly review access; the route is a 404 until both are set. |
 | `TRUST_PROXY_HOPS` | `1` behind nginx-proxy, for rate-limit IPs. |
 

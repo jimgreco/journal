@@ -6,10 +6,20 @@
 
 CREATE TABLE IF NOT EXISTS journal_users (
   id uuid PRIMARY KEY,
-  apple_sub text NOT NULL UNIQUE,
   email text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Sign-in identities (Apple, Google). Several can belong to one user: a new
+-- identity joins the user with the same verified email.
+CREATE TABLE IF NOT EXISTS journal_identities (
+  provider text NOT NULL CHECK (provider IN ('apple', 'google', 'dev')),
+  subject text NOT NULL CHECK (length(subject) BETWEEN 1 AND 255),
+  user_id uuid NOT NULL REFERENCES journal_users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS journal_identities_user_idx ON journal_identities(user_id);
 
 CREATE TABLE IF NOT EXISTS journal_sessions (
   token_hash text PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
@@ -44,13 +54,13 @@ CREATE TABLE IF NOT EXISTS journal_entries (
 CREATE INDEX IF NOT EXISTS journal_entries_user_revision_idx ON journal_entries(user_id, revision);
 CREATE INDEX IF NOT EXISTS journal_entries_user_date_idx ON journal_entries(user_id, entry_date);
 
--- Least-privilege runtime access: DML on the three app tables and the
+-- Least-privilege runtime access: DML on the app tables and the
 -- revision sequence only. The migration ledger stays closed to runtime.
 -- Skipped where the role does not exist (tests, local development).
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'journal_runtime') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON journal_users, journal_sessions, journal_entries TO journal_runtime;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON journal_users, journal_identities, journal_sessions, journal_entries TO journal_runtime;
     GRANT USAGE ON SEQUENCE journal_entry_revision TO journal_runtime;
   END IF;
 END $$;

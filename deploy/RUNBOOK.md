@@ -2,7 +2,7 @@
 
 All steps are the owner's. Nothing here prints a secret; keep it that way.
 
-## 1. Apple
+## 1. Apple and Google
 
 1. Developer portal: App ID `com.jimgreco.journal` with **Sign in with Apple**.
 2. App Store distribution provisioning profile for it, signed by the existing
@@ -12,8 +12,13 @@ All steps are the owner's. Nothing here prints a secret; keep it that way.
    stay "Journal"). Add yourself to an internal TestFlight group.
 4. Fill `appId`, `profiles.app.uuid`, `profiles.app.name` and `groups` in
    `.github/scripts/release-policy.json` (same format as Ritual Cue's).
-5. Repository secrets: the TestFlight set from the app standard, plus
-   `IOS_API_BASE_URL=https://journal.jim-greco.com`.
+5. Google Cloud console (the project your other apps use): create an **iOS**
+   OAuth client for bundle ID `com.jimgreco.journal`. Note its client id and
+   reversed client id.
+6. Repository secrets: the TestFlight set from the app standard, plus
+   `IOS_API_BASE_URL=https://journal.jim-greco.com`,
+   `GOOGLE_IOS_CLIENT_ID` and `GOOGLE_IOS_REVERSED_CLIENT_ID`. For local
+   device builds, put the same two values in `project.yml`.
 
 ## 2. Database (shared_db on the host)
 
@@ -47,7 +52,8 @@ DATABASE_URL=postgresql://journal_runtime:$RUNTIME_PW@shared_db:5432/journal
 JOURNAL_DATA_KEYS=1:$KEY
 SESSION_SECRET=$(openssl rand -hex 32)
 APPLE_BUNDLE_ID=com.jimgreco.journal
-ALLOWED_EMAILS=<your Apple ID email>
+GOOGLE_CLIENT_ID=<the iOS client id from step 1.5>
+ALLOWED_EMAILS=<your Google and/or Apple ID email>
 TRUST_PROXY_HOPS=1
 EOF
 chmod 600 ~/deploy/journal.env

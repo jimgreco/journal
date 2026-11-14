@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import appleSignin from "apple-signin-auth";
+import { OAuth2Client } from "google-auth-library";
 import { open, seal, sha256Hex, constantTimeEqualHex, parseKeyRing } from "./crypto.js";
 import { ConflictError } from "./store.js";
 import { weeklySummary, isMonday } from "./weekly.js";
@@ -21,6 +22,8 @@ export function loadConfig(env = process.env) {
     keys: parseKeyRing(env.JOURNAL_DATA_KEYS),
     sessionSecret: env.SESSION_SECRET || "",
     appleBundleId: env.APPLE_BUNDLE_ID || "",
+    // The iOS app's Google OAuth client id(s), the identity-token audience.
+    googleClientIds: list(env.GOOGLE_CLIENT_ID),
     allowedEmails: list(env.ALLOWED_EMAILS).map((e) => e.toLowerCase()),
     allowedAppleSubs: list(env.ALLOWED_APPLE_SUBS),
     weeklyTokenSha256: String(env.WEEKLY_SUMMARY_TOKEN_SHA256 || "").trim().toLowerCase(),
@@ -143,11 +146,17 @@ export function decryptEntry(keys, row) {
 
 // ---- app -----------------------------------------------------------------
 
-export function createApp({ store, config, verifyAppleToken, now = () => new Date() }) {
+export function createApp({ store, config, verifyAppleToken, verifyGoogleToken, now = () => new Date() }) {
   const buckets = new Map();
 
   verifyAppleToken ??= async (identityToken) =>
     appleSignin.verifyIdToken(identityToken, { audience: config.appleBundleId, ignoreExpiration: false });
+
+  const googleClient = new OAuth2Client();
+  verifyGoogleToken ??= async (idToken) => {
+    const ticket = await googleClient.verifyIdToken({ idToken, audience: config.googleClientIds });
+    return ticket.getPayload();
+  };
 
   function clientIP(request) {
     const socket = request.socket?.remoteAddress || "unknown";
@@ -206,10 +215,29 @@ export function createApp({ store, config, verifyAppleToken, now = () => new Dat
     };
   }
 
-  function isAllowed(sub, email) {
-    if (config.allowedAppleSubs.includes(sub)) return true;
+  function isAllowed(provider, sub, email) {
+    if (provider === "apple" && config.allowedAppleSubs.includes(sub)) return true;
     if (email && config.allowedEmails.includes(email.toLowerCase())) return true;
     return !config.production && !config.allowedEmails.length && !config.allowedAppleSubs.length;
+  }
+
+  // Shared by Apple and Google: only a verified email counts, and only allowed accounts get in.
+  async function signInWith(response, provider, claims) {
+    const subject = String(claims.sub).slice(0, 255);
+    const verified = claims.email_verified === true || claims.email_verified === "true";
+    const email = claims.email && verified ? String(claims.email) : "";
+    if (!isAllowed(provider, subject, email)) {
+      // The sub is the provider's opaque user id; for Apple the owner can copy it into ALLOWED_APPLE_SUBS.
+      console.warn(`sign-in refused for ${provider} sub ${subject.slice(0, 64)}`);
+      return send(response, 403, { error: "this journal is private" });
+    }
+    const user = await store.upsertUserByIdentity({
+      provider,
+      subject,
+      email: email || `${subject}@${provider}.invalid`,
+      emailVerified: Boolean(email)
+    });
+    return send(response, 200, await issueSession(user));
   }
 
   async function authenticate(request) {
@@ -279,25 +307,30 @@ export function createApp({ store, config, verifyAppleToken, now = () => new Dat
         claims = null;
       }
       if (!claims?.sub) return send(response, 401, { error: "invalid Apple token" });
-      const verified = claims.email_verified === true || claims.email_verified === "true";
-      const email = claims.email && verified ? String(claims.email) : "";
-      if (!isAllowed(claims.sub, email)) {
-        // The sub is Apple's opaque per-app user id; the owner copies it into ALLOWED_APPLE_SUBS.
-        console.warn(`sign-in refused for Apple sub ${String(claims.sub).slice(0, 64)}`);
-        return send(response, 403, { error: "this journal is private" });
+      return signInWith(response, "apple", claims);
+    }
+
+    if (method === "POST" && path === "/auth/google") {
+      const retry = limited(request, "auth", 20, 15 * 60_000);
+      if (retry) return send(response, 429, { error: "rate limited" }, { "retry-after": String(retry) });
+      if (!config.googleClientIds.length) return send(response, 503, { error: "Google sign-in is not configured" });
+      const body = await readJSON(request);
+      if (typeof body.idToken !== "string" || body.idToken.length > 8192) throw new HttpError(400, "idToken required");
+      let claims;
+      try {
+        claims = await verifyGoogleToken(body.idToken);
+      } catch {
+        claims = null;
       }
-      const user = await store.upsertUserByApple({
-        appleSub: claims.sub,
-        email: email || `${claims.sub}@privaterelay.appleid.com`
-      });
-      return send(response, 200, await issueSession(user));
+      if (!claims?.sub) return send(response, 401, { error: "invalid Google token" });
+      return signInWith(response, "google", claims);
     }
 
     if (method === "POST" && path === "/auth/dev") {
       if (config.production || !config.devSignIn) return send(response, 404, { error: "not found" });
       const body = await readJSON(request);
       const email = typeof body.email === "string" && body.email ? body.email : "dev@example.test";
-      const user = await store.upsertUserByApple({ appleSub: `dev:${email}`, email });
+      const user = await store.upsertUserByIdentity({ provider: "dev", subject: email, email, emailVerified: true });
       return send(response, 200, await issueSession(user));
     }
 
