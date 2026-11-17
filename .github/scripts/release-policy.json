@@ -1,6 +1,6 @@
 {
   "app": "journal",
-  "appId": "SET_AFTER_CREATING_APP_STORE_CONNECT_RECORD",
+  "appId": "6835884840",
   "bundleId": "com.jimgreco.journal",
   "teamId": "V6JPQCD336",
   "certificateSha256": "7fb57dbf0cd7923f9ba97d8801824de79e1ba235dbe78d4a821f8195c30f0bf8",
@@ -8,10 +8,18 @@
   "testerEmailSha256s": [
     "a46343858cf3e5e2fda6339f7063190f295ece10dea50979932e69ec57ea4baa"
   ],
-  "groups": [],
+  "groups": [
+    {
+      "id": "1fbad9c4-37b6-44d8-aecb-cf5db8229e63",
+      "name": "Family",
+      "internal": true,
+      "testers": 1,
+      "automatic": true
+    }
+  ],
   "profiles": {
     "app": {
-      "uuid": "SET_AFTER_CREATING_PROVISIONING_PROFILE",
+      "uuid": "0cac73c5-2a12-4bc2-b65a-77f9998d85d1",
       "name": "Journal App Store",
       "bundleId": "com.jimgreco.journal",
       "groups": [],
