@@ -9,7 +9,7 @@ All steps are the owner's. Nothing here prints a secret; keep it that way.
    distribution certificate.
 3. App Store Connect: a new app record for the bundle ID (the name "Journal"
    is taken on the store, so pick a unique store name). Apple also rejects an
-   upload whose home-screen name (`CFBundleDisplayName`) is taken
+   upload whose home-screen name or bundle name (`CFBundleDisplayName`, `CFBundleName`) is taken
    (ITMS-90129), so the app shows as "Private Notes". Add yourself to an
    internal TestFlight group.
 4. Fill `appId`, `profiles.app.uuid`, `profiles.app.name` and `groups` in
