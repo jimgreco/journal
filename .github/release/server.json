@@ -1,0 +1,15 @@
+{
+  "app": "journal",
+  "image": "ghcr.io/jimgreco/journal",
+  "images": [
+    { "context": "server", "dockerfile": "server/Dockerfile", "build_args": { "APP_BUILD": "{sha}" } }
+  ],
+  "profile": "journal",
+  "services": {
+    "journal": {
+      "health": ["node", "-e", "fetch('http://127.0.0.1:8791/health').then(r=>r.ok?r.json():Promise.reject(new Error('health'))).then(h=>process.exit(h.ok===true&&h.db===true&&h.build==='{sha}'?0:1)).catch(()=>process.exit(1))"]
+    }
+  },
+  "interpolate_from_live": { "JOURNAL_IMAGE": "image:journal" },
+  "refuse_backwards": true
+}
