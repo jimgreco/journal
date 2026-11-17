@@ -8,8 +8,10 @@ All steps are the owner's. Nothing here prints a secret; keep it that way.
 2. App Store distribution provisioning profile for it, signed by the existing
    distribution certificate.
 3. App Store Connect: a new app record for the bundle ID (the name "Journal"
-   is taken on the store, so pick a unique store name; the home-screen name can
-   stay "Journal"). Add yourself to an internal TestFlight group.
+   is taken on the store, so pick a unique store name). Apple also rejects an
+   upload whose home-screen name (`CFBundleDisplayName`) is taken
+   (ITMS-90129), so the app shows as "Private Notes". Add yourself to an
+   internal TestFlight group.
 4. Fill `appId`, `profiles.app.uuid`, `profiles.app.name` and `groups` in
    `.github/scripts/release-policy.json` (same format as Ritual Cue's).
 5. Google Cloud console (the project your other apps use): create an **iOS**
