@@ -15,6 +15,16 @@ Sunday weekly review unless they are marked private.
                                                 weekly-review routine
 ```
 
+## Quick capture
+
+- **Speak Entry** and **Write Entry** are App Shortcuts: assign one to the
+  Action Button (Settings → Action Button → Shortcut → Private Notes), say
+  "Speak an entry in Private Notes" to Siri, or find them in Spotlight. Each
+  opens the app, asks for Face ID and lands in a new entry.
+- A **daily reminder** (Account → Reminder, off by default) is a local
+  notification with fixed text; tapping it starts a voice entry.
+- Returning to the app asks for Face ID right away, without tapping Unlock.
+
 ## Privacy model
 
 | Where | What is stored | Protection |

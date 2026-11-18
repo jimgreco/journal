@@ -1,5 +1,6 @@
 import GoogleSignIn
 import SwiftUI
+import UserNotifications
 
 @main
 struct JournalApp: App {
@@ -7,11 +8,14 @@ struct JournalApp: App {
     @State private var store = EntryStore()
     @State private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
+    @State private var wasInBackground = false
 
     init() {
         if let clientID = GoogleConfig.clientID {
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
         }
+        // Set before launch finishes so a tap on the reminder is delivered.
+        UNUserNotificationCenter.current().delegate = Reminder.shared
     }
 
     var body: some Scene {
@@ -28,7 +32,19 @@ struct JournalApp: App {
                 }
                 .onOpenURL { url in GIDSignIn.sharedInstance.handle(url) }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .background { lock.lock() }
+                    if phase == .background {
+                        lock.lock()
+                        wasInBackground = true
+                    }
+                    // Coming back from the background, ask for Face ID right away
+                    // instead of waiting for a tap on Unlock. Only once per return:
+                    // the Face ID sheet itself makes the app inactive and active again.
+                    if phase == .active, wasInBackground {
+                        wasInBackground = false
+                        if session.isSignedIn, lock.isLocked {
+                            Task { await lock.unlock() }
+                        }
+                    }
                     if phase == .active, session.isSignedIn, !lock.isLocked {
                         Task { await store.sync(with: SessionRemote(session: session)) }
                     }
@@ -80,6 +96,8 @@ struct RootView: View {
                 Task { await store.sync(with: SessionRemote(session: session)) }
             } else {
                 store.reset()
+                CaptureRequest.shared.clear()
+                Reminder.shared.turnOff()
             }
         }
     }

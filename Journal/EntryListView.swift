@@ -85,7 +85,18 @@ struct EntryListView: View {
                 ComposeView(entry: entry, startRecording: false) { syncSoon() }
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
+            // This view only exists once the journal is signed in and unlocked.
+            .onChange(of: CaptureRequest.shared.pending, initial: true) { _, _ in openPendingCapture() }
         }
+    }
+
+    /// Starts the entry asked for by the Action Button, Siri, a shortcut or the reminder.
+    private func openPendingCapture() {
+        guard let kind = CaptureRequest.shared.take() else { return }
+        // Already writing: keep that entry rather than replacing it.
+        guard composing == nil, editing == nil else { return }
+        showingSettings = false
+        composing = kind == .voice ? .voice : .text
     }
 
     private func syncSoon() {

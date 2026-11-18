@@ -202,3 +202,35 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(DayKey.key(for: date, timeZone: tz), "2026-11-10")
     }
 }
+
+@MainActor
+final class CaptureTests: XCTestCase {
+    func testRequestIsTakenOnce() {
+        let capture = CaptureRequest()
+        XCTAssertNil(capture.take())
+        capture.request(.text)
+        capture.request(.voice)
+        XCTAssertEqual(capture.take(), .voice, "the latest request wins")
+        XCTAssertNil(capture.take())
+    }
+
+    func testReminderTimeMath() {
+        XCTAssertEqual(Reminder.components(minutes: 21 * 60 + 5), DateComponents(hour: 21, minute: 5))
+        XCTAssertEqual(Reminder.components(minutes: 5000), DateComponents(hour: 23, minute: 59))
+        XCTAssertEqual(Reminder.components(minutes: -3), DateComponents(hour: 0, minute: 0))
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let date = JSONCoding.isoFormatter.date(from: "2026-11-11T02:30:00.000Z")! // 21:30 in New York
+        XCTAssertEqual(Reminder.minutes(of: date, calendar: calendar), 21 * 60 + 30)
+    }
+
+    func testReminderStartsOffAtNinePM() {
+        let name = "reminder-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let reminder = Reminder(defaults: defaults)
+        XCTAssertFalse(reminder.isOn)
+        XCTAssertEqual(reminder.minutes, 21 * 60)
+    }
+}

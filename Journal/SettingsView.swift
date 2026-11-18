@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var exporting = false
     @State private var confirmDelete = false
     @State private var message: String?
+    @State private var reminder = Reminder.shared
 
     var body: some View {
         NavigationStack {
@@ -28,6 +29,29 @@ struct SettingsView: View {
                     Text("Privacy")
                 }
                 .font(.footnote)
+
+                Section {
+                    Toggle("Daily reminder", isOn: Binding(
+                        get: { reminder.isOn },
+                        set: { on in
+                            if on { Task { await reminder.turnOn() } } else { reminder.turnOff() }
+                        }
+                    ))
+                    if reminder.isOn {
+                        DatePicker("Time", selection: Binding(
+                            get: { reminder.time },
+                            set: { date in Task { await reminder.setTime(date) } }
+                        ), displayedComponents: .hourAndMinute)
+                    }
+                    if let note = reminder.message {
+                        Text(note).font(.footnote).foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text("Reminder")
+                } footer: {
+                    Text("Tap it to start speaking an entry. The notification never shows anything you wrote. "
+                         + "You can also put Speak Entry on the Action Button or ask Siri.")
+                }
 
                 Section {
                     if let exportURL {
