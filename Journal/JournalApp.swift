@@ -6,6 +6,7 @@ struct JournalApp: App {
     @State private var session = Session()
     @State private var store = EntryStore()
     @State private var lock = AppLock()
+    @State private var healthMood = HealthMood()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -20,6 +21,12 @@ struct JournalApp: App {
                 .environment(session)
                 .environment(store)
                 .environment(lock)
+                .environment(healthMood)
+                .onAppear {
+                    store.onLocalChange = { [healthMood] entry in
+                        Task { await healthMood.update(entry) }
+                    }
+                }
                 .onOpenURL { url in GIDSignIn.sharedInstance.handle(url) }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     if phase == .background { lock.lock() }

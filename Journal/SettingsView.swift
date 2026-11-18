@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(Session.self) private var session
     @Environment(EntryStore.self) private var store
+    @Environment(HealthMood.self) private var healthMood
     @Environment(\.dismiss) private var dismiss
     @State private var exportURL: URL?
     @State private var exporting = false
@@ -28,6 +29,28 @@ struct SettingsView: View {
                     Text("Privacy")
                 }
                 .font(.footnote)
+
+                if HealthMood.isAvailable {
+                    Section {
+                        Toggle(isOn: Binding(
+                            get: { healthMood.isEnabled },
+                            set: { on in
+                                if on {
+                                    Task { await healthMood.enable(existing: store.visibleEntries) }
+                                } else {
+                                    healthMood.disable()
+                                }
+                            }
+                        )) {
+                            Label("Save mood to Apple Health", systemImage: "heart.text.square")
+                        }
+                        if let error = healthMood.error {
+                            Text(error).font(.footnote).foregroundStyle(.orange)
+                        }
+                    } footer: {
+                        Text("Moods appear in Health as State of Mind. Only the mood is shared, never what you wrote, and private entries are left out.")
+                    }
+                }
 
                 Section {
                     if let exportURL {

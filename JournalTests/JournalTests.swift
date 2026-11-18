@@ -1,3 +1,4 @@
+import HealthKit
 import XCTest
 @testable import Journal
 
@@ -200,5 +201,48 @@ final class ModelTests: XCTestCase {
         // 02:30 UTC on Nov 11 is still Nov 10 in New York.
         let date = JSONCoding.isoFormatter.date(from: "2026-11-11T02:30:00.000Z")!
         XCTAssertEqual(DayKey.key(for: date, timeZone: tz), "2026-11-10")
+    }
+}
+
+@MainActor
+final class HealthMoodTests: XCTestCase {
+    private func entry(day: String, created: Date, mood: Int?, isPrivate: Bool = false, deleted: Bool = false) -> Entry {
+        Entry(entryDate: day, createdAt: created, updatedAt: created, source: .text, isPrivate: isPrivate,
+              text: "never sent", mood: mood, tags: [], deleted: deleted)
+    }
+
+    func testValenceRunsFromUnpleasantToPleasant() {
+        XCTAssertEqual(Mood.allCases.map(HealthMood.valence(for:)), [-1, -0.5, 0, 0.5, 1])
+    }
+
+    func testOnlyPublicLiveEntriesWithAMoodGoToHealth() {
+        let now = Date()
+        let today = DayKey.key(for: now)
+        XCTAssertNotNil(HealthMood.sample(for: entry(day: today, created: now, mood: 4)))
+        XCTAssertNil(HealthMood.sample(for: entry(day: today, created: now, mood: nil)))
+        XCTAssertNil(HealthMood.sample(for: entry(day: today, created: now, mood: 4, isPrivate: true)))
+        XCTAssertNil(HealthMood.sample(for: entry(day: today, created: now, mood: 4, deleted: true)))
+    }
+
+    func testSampleCarriesOnlyTheMoodAndASyncIdentifier() throws {
+        let now = Date()
+        let e = entry(day: DayKey.key(for: now), created: now, mood: 5)
+        let sample = try XCTUnwrap(HealthMood.sample(for: e))
+        XCTAssertEqual(sample.valence, 1)
+        XCTAssertEqual(sample.kind, .dailyMood)
+        XCTAssertEqual(sample.metadata?[HKMetadataKeySyncIdentifier] as? String, HealthMood.syncIdentifier(e.id))
+        XCTAssertFalse(sample.metadata?.values.contains { "\($0)".contains("never sent") } ?? false)
+    }
+
+    func testBackdatedEntryIsPlacedAtMiddayOfItsDay() {
+        let calendar = Calendar.current
+        let now = Date()
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let e = entry(day: DayKey.key(for: yesterday), created: now, mood: 3)
+        let date = HealthMood.date(for: e, calendar: calendar)
+        XCTAssertTrue(calendar.isDate(date, inSameDayAs: yesterday))
+        XCTAssertEqual(calendar.component(.hour, from: date), 12)
+        let sameDay = entry(day: DayKey.key(for: now), created: now, mood: 3)
+        XCTAssertEqual(HealthMood.date(for: sameDay, calendar: calendar), now)
     }
 }

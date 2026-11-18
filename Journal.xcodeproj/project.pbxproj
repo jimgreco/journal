@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1810E0799220721D83C808BF /* HealthMood.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2DB5E08CBCABC706F2127F0 /* HealthMood.swift */; };
 		4F625182A8C4720A57805065 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B7B45A1694DD8AE88BB65EC4 /* Assets.xcassets */; };
 		51901B7535AD7888CBABA238 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47616C7305638AC933C122DA /* Models.swift */; };
 		557870FD7AD92F320D76324E /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 4E9EEAAE3191B71D19E6373C /* GoogleSignIn */; };
@@ -47,6 +48,7 @@
 		68A8E5CFAF2E38FC83C0EF8D /* Dictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dictation.swift; sourceTree = "<group>"; };
 		7262F6399A3E96BEAEF29918 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 		80251EF6DF2C6304FDF6EB37 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A2DB5E08CBCABC706F2127F0 /* HealthMood.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMood.swift; sourceTree = "<group>"; };
 		A7780CD43DD3564DAF498821 /* JournalTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JournalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B5F2BD1F394E623767D277F8 /* JournalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalApp.swift; sourceTree = "<group>"; };
 		B7B45A1694DD8AE88BB65EC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -104,6 +106,7 @@
 				68A8E5CFAF2E38FC83C0EF8D /* Dictation.swift */,
 				0CC3AD9D327262822487008A /* EntryListView.swift */,
 				EA5ADFD4BC3A700C730CCF79 /* EntryStore.swift */,
+				A2DB5E08CBCABC706F2127F0 /* HealthMood.swift */,
 				80251EF6DF2C6304FDF6EB37 /* Info.plist */,
 				C9A8F967D24A2D56C66AA5A4 /* Journal.entitlements */,
 				B5F2BD1F394E623767D277F8 /* JournalApp.swift */,
@@ -221,6 +224,7 @@
 				A049B8E962D62E1E28FF8B55 /* Dictation.swift in Sources */,
 				A9FE60AA5D8D9C62DB25B154 /* EntryListView.swift in Sources */,
 				A89EE8984E4CD1E222D3770E /* EntryStore.swift in Sources */,
+				1810E0799220721D83C808BF /* HealthMood.swift in Sources */,
 				A05F3246AC4DC57E5A23660C /* JournalApp.swift in Sources */,
 				CD101B6474C5DDC6FF75395A /* Keychain.swift in Sources */,
 				51901B7535AD7888CBABA238 /* Models.swift in Sources */,
