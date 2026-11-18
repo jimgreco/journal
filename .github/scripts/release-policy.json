@@ -27,8 +27,7 @@
         "Default"
       ],
       "push": null,
-      "healthkit": true,
-      "healthkitBackgroundDelivery": false
+      "healthkit": true
     }
   },
   "marketingVersion": "1.0",
