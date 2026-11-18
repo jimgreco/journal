@@ -19,7 +19,7 @@
   ],
   "profiles": {
     "app": {
-      "uuid": "0cac73c5-2a12-4bc2-b65a-77f9998d85d1",
+      "uuid": "a406c2c8-8634-400e-b4a0-ffbd57c1081d",
       "name": "Journal App Store",
       "bundleId": "com.jimgreco.journal",
       "groups": [],
