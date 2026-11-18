@@ -124,6 +124,5 @@ struct LockView: View {
             Spacer()
         }
         .padding(32)
-        .task { await lock.unlock() }
     }
 }

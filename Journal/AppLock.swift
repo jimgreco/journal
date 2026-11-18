@@ -15,9 +15,22 @@ final class AppLock {
     #endif
     private(set) var isAuthenticating = false
     var message: String?
+    /// One automatic Face ID prompt per lock. Cancelling it leaves the Unlock
+    /// button, instead of prompting again each time the app becomes active
+    /// (the system prompt itself makes the app inactive and active again).
+    private var autoUnlockPending = true
 
     func lock() {
+        if !isLocked { message = nil }
         isLocked = true
+        autoUnlockPending = true
+    }
+
+    /// Called when the app becomes active: prompts for Face ID without a tap.
+    func unlockAutomaticallyIfNeeded() async {
+        guard isLocked, autoUnlockPending else { return }
+        autoUnlockPending = false
+        await unlock()
     }
 
     func unlock() async {

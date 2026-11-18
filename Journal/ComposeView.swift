@@ -3,6 +3,7 @@ import SwiftUI
 struct ComposeView: View {
     @Environment(EntryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     let original: Entry?
     let startRecording: Bool
@@ -116,6 +117,10 @@ struct ComposeView: View {
                 if startRecording { await beginDictation() } else if original == nil { editorFocused = true }
             }
             .onDisappear { dictation.stop() }
+            // Leaving the app stops listening; the entry stays open with its text.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { dictation.stop() }
+            }
         }
     }
 
