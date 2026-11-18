@@ -13,6 +13,7 @@ import Speech
 final class Dictation {
     private(set) var isRecording = false
     private(set) var transcript = ""
+    private var segments = TranscriptSegments()
     private(set) var level: Float = 0
     var error: String?
 
@@ -28,6 +29,7 @@ final class Dictation {
         guard !isRecording else { return }
         error = nil
         transcript = ""
+        segments = TranscriptSegments()
 
         guard await Self.requestPermissions() else {
             error = "Journal needs microphone and speech recognition access. Turn them on in Settings."
@@ -73,9 +75,15 @@ final class Dictation {
             task = recognizer.recognitionTask(with: request) { [weak self] result, error in
                 let text = result?.bestTranscription.formattedString
                 let isFinal = result?.isFinal ?? false
+                // On-device recognition ends an utterance after a pause (it
+                // then attaches metadata) and starts the next one from empty.
+                let utteranceEnded = result?.speechRecognitionMetadata != nil
                 Task { @MainActor in
                     guard let self, self.session == current else { return }
-                    if let text { self.transcript = text }
+                    if let text {
+                        self.segments.update(text, utteranceEnded: utteranceEnded)
+                        self.transcript = self.segments.text
+                    }
                     if error != nil || isFinal { self.finish() }
                 }
             }
@@ -122,5 +130,44 @@ final class Dictation {
         var sum: Float = 0
         for i in 0..<Int(buffer.frameLength) { sum += data[i] * data[i] }
         return min(1, sqrt(sum / Float(buffer.frameLength)) * 8)
+    }
+}
+
+
+/// Joins the utterances of one long dictation.
+///
+/// The recognizer reports each utterance as a growing, sometimes revised,
+/// string, then starts over from empty for the next one. Without this, a new
+/// utterance replaced everything said before it.
+struct TranscriptSegments {
+    private(set) var finished: [String] = []
+    private(set) var current = ""
+
+    var text: String { (finished + [current]).filter { !$0.isEmpty }.joined(separator: " ") }
+
+    mutating func update(_ partial: String, utteranceEnded: Bool) {
+        let partial = partial.trimmingCharacters(in: .whitespacesAndNewlines)
+        if Self.startsOver(previous: current, next: partial) { commit() }
+        current = partial
+        if utteranceEnded { commit() }
+    }
+
+    private mutating func commit() {
+        if !current.isEmpty { finished.append(current) }
+        current = ""
+    }
+
+    /// True when `next` is a fresh utterance rather than a revision of
+    /// `previous`: it's shorter and doesn't begin the way `previous` does.
+    /// Revisions keep the start stable and usually only grow.
+    static func startsOver(previous: String, next: String) -> Bool {
+        let p = normalized(previous), n = normalized(next)
+        guard !p.isEmpty, !n.isEmpty, n.count < p.count else { return false }
+        let probe = String(n.prefix(min(n.count, 6)))
+        return !p.hasPrefix(probe)
+    }
+
+    private static func normalized(_ s: String) -> String {
+        String(s.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == " " }.map(Character.init))
     }
 }
