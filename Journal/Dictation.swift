@@ -20,6 +20,9 @@ final class Dictation {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var recognizer: SFSpeechRecognizer?
+    /// Bumped on every start so a late callback from an earlier session
+    /// can't end the one that is running now.
+    private var session = 0
 
     func start() async {
         guard !isRecording else { return }
@@ -40,6 +43,8 @@ final class Dictation {
             return
         }
         self.recognizer = recognizer
+        session += 1
+        let current = session
 
         do {
             let audio = AVAudioSession.sharedInstance()
@@ -69,7 +74,7 @@ final class Dictation {
                 let text = result?.bestTranscription.formattedString
                 let isFinal = result?.isFinal ?? false
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, self.session == current else { return }
                     if let text { self.transcript = text }
                     if error != nil || isFinal { self.finish() }
                 }
