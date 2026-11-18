@@ -57,6 +57,9 @@ final class EntryStore {
     private let fileURL: URL
     private var syncAgain = false
 
+    /// Called after every local save or delete (Apple Health mirroring).
+    var onLocalChange: ((Entry) -> Void)?
+
     init(fileURL: URL = EntryStore.defaultFileURL) {
         self.fileURL = fileURL
         load()
@@ -102,6 +105,7 @@ final class EntryStore {
         state.entries[entry.id] = entry
         state.pending[entry.id] = .upsert(now)
         persist()
+        onLocalChange?(entry)
     }
 
     func delete(_ id: UUID) {
@@ -113,6 +117,7 @@ final class EntryStore {
         state.entries[id] = entry
         state.pending[id] = .delete
         persist()
+        onLocalChange?(entry)
     }
 
     /// Wipes everything on this device (sign out, account deletion).
