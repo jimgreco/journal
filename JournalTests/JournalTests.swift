@@ -246,3 +246,37 @@ final class HealthMoodTests: XCTestCase {
         XCTAssertEqual(HealthMood.date(for: sameDay, calendar: calendar), now)
     }
 }
+
+final class TranscriptSegmentsTests: XCTestCase {
+    func testRevisionsOfOneUtteranceReplaceEachOther() {
+        var t = TranscriptSegments()
+        t.update("I went", utteranceEnded: false)
+        t.update("I went to the", utteranceEnded: false)
+        t.update("I went to the store.", utteranceEnded: false)
+        XCTAssertEqual(t.text, "I went to the store.")
+    }
+
+    func testUtteranceEndKeepsTextWhenTheNextStarts() {
+        var t = TranscriptSegments()
+        t.update("I went to the store.", utteranceEnded: false)
+        t.update("I went to the store.", utteranceEnded: true)
+        t.update("Then", utteranceEnded: false)
+        t.update("Then I came home.", utteranceEnded: false)
+        XCTAssertEqual(t.text, "I went to the store. Then I came home.")
+    }
+
+    func testRestartWithoutMetadataIsStillKept() {
+        var t = TranscriptSegments()
+        t.update("It was a long day at work and I was tired.", utteranceEnded: false)
+        t.update("Dinner", utteranceEnded: false)
+        t.update("Dinner was good.", utteranceEnded: false)
+        XCTAssertEqual(t.text, "It was a long day at work and I was tired. Dinner was good.")
+    }
+
+    func testShorterRevisionWithTheSameStartIsNotARestart() {
+        var t = TranscriptSegments()
+        t.update("I think that that is", utteranceEnded: false)
+        t.update("I think that is", utteranceEnded: false)
+        XCTAssertEqual(t.text, "I think that is")
+    }
+}
