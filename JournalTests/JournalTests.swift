@@ -279,4 +279,25 @@ final class TranscriptSegmentsTests: XCTestCase {
         t.update("I think that is", utteranceEnded: false)
         XCTAssertEqual(t.text, "I think that is")
     }
+
+    func testNewerModelResultsReplaceTheGuessThenSettle() {
+        var t = TranscriptSegments()
+        t.set("I went to this", isFinal: false)
+        t.set(" I went to the store.", isFinal: false)
+        t.set("I went to the store. ", isFinal: true)
+        t.set("Then", isFinal: false)
+        XCTAssertEqual(t.text, "I went to the store. Then")
+        t.set("Dinner", isFinal: false) // a guess is replaced, never kept
+        t.set("Then I came home.", isFinal: true)
+        XCTAssertEqual(t.text, "I went to the store. Then I came home.")
+    }
+
+    func testEndingAnUtteranceProtectsItFromTheNextRequest() {
+        var t = TranscriptSegments()
+        t.update("It was loud on the street", utteranceEnded: false)
+        t.endUtterance()
+        t.update("It", utteranceEnded: false)
+        t.update("It got quieter.", utteranceEnded: false)
+        XCTAssertEqual(t.text, "It was loud on the street It got quieter.")
+    }
 }
