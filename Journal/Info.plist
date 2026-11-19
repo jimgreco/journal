@@ -44,6 +44,10 @@
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Private Notes uses Face ID to keep your entries locked when you're not using it.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Private Notes doesn't read your health data.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Private Notes saves the mood you pick for an entry to Apple Health as State of Mind. What you wrote is never shared.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Private Notes uses the microphone so you can speak an entry. The audio is transcribed on your iPhone and never saved or uploaded.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

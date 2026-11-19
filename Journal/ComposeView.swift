@@ -3,6 +3,8 @@ import SwiftUI
 struct ComposeView: View {
     @Environment(EntryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppLock.self) private var lock
 
     let original: Entry?
     let startRecording: Bool
@@ -17,6 +19,7 @@ struct ComposeView: View {
     @State private var dictation = Dictation()
     @State private var textBeforeDictation = ""
     @State private var confirmDiscard = false
+    @State private var resumeDictation = false
     @FocusState private var editorFocused: Bool
 
     init(entry: Entry?, startRecording: Bool, onSave: @escaping () -> Void) {
@@ -111,6 +114,24 @@ struct ComposeView: View {
                 if startRecording { await beginDictation() } else if original == nil { editorFocused = true }
             }
             .onDisappear { dictation.stop() }
+            // Leaving the app pauses listening (the app locks, and audio isn't
+            // recorded in the background). Once you're back and unlocked, it
+            // picks up again, adding to the text so far.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background, dictation.isRecording {
+                    resumeDictation = true
+                    dictation.stop()
+                }
+            }
+            .onChange(of: scenePhase == .active && !lock.isLocked) { _, ready in
+                guard ready, resumeDictation else { return }
+                resumeDictation = false
+                Task {
+                    // Let the paused session's last words land in the text first.
+                    try? await Task.sleep(for: .milliseconds(400))
+                    await beginDictation()
+                }
+            }
         }
     }
 
@@ -140,6 +161,7 @@ struct ComposeView: View {
         HStack {
             if dictation.isRecording {
                 Button {
+                    resumeDictation = false
                     dictation.stop()
                 } label: {
                     Label("Stop", systemImage: "stop.circle.fill")
@@ -172,6 +194,7 @@ struct ComposeView: View {
     }
 
     private func save() {
+        resumeDictation = false
         dictation.stop()
         let now = Date()
         let entry = Entry(
@@ -192,6 +215,7 @@ struct ComposeView: View {
     }
 
     private func close() {
+        resumeDictation = false
         dictation.stop()
         dismiss()
     }

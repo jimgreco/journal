@@ -1,3 +1,4 @@
+import HealthKit
 import XCTest
 @testable import Journal
 
@@ -232,5 +233,82 @@ final class CaptureTests: XCTestCase {
         let reminder = Reminder(defaults: defaults)
         XCTAssertFalse(reminder.isOn)
         XCTAssertEqual(reminder.minutes, 21 * 60)
+    }
+}
+
+@MainActor
+final class HealthMoodTests: XCTestCase {
+    private func entry(day: String, created: Date, mood: Int?, isPrivate: Bool = false, deleted: Bool = false) -> Entry {
+        Entry(entryDate: day, createdAt: created, updatedAt: created, source: .text, isPrivate: isPrivate,
+              text: "never sent", mood: mood, tags: [], deleted: deleted)
+    }
+
+    func testValenceRunsFromUnpleasantToPleasant() {
+        XCTAssertEqual(Mood.allCases.map(HealthMood.valence(for:)), [-1, -0.5, 0, 0.5, 1])
+    }
+
+    func testOnlyPublicLiveEntriesWithAMoodGoToHealth() {
+        let now = Date()
+        let today = DayKey.key(for: now)
+        XCTAssertNotNil(HealthMood.sample(for: entry(day: today, created: now, mood: 4)))
+        XCTAssertNil(HealthMood.sample(for: entry(day: today, created: now, mood: nil)))
+        XCTAssertNil(HealthMood.sample(for: entry(day: today, created: now, mood: 4, isPrivate: true)))
+        XCTAssertNil(HealthMood.sample(for: entry(day: today, created: now, mood: 4, deleted: true)))
+    }
+
+    func testSampleCarriesOnlyTheMoodAndASyncIdentifier() throws {
+        let now = Date()
+        let e = entry(day: DayKey.key(for: now), created: now, mood: 5)
+        let sample = try XCTUnwrap(HealthMood.sample(for: e))
+        XCTAssertEqual(sample.valence, 1)
+        XCTAssertEqual(sample.kind, .dailyMood)
+        XCTAssertEqual(sample.metadata?[HKMetadataKeySyncIdentifier] as? String, HealthMood.syncIdentifier(e.id))
+        XCTAssertFalse(sample.metadata?.values.contains { "\($0)".contains("never sent") } ?? false)
+    }
+
+    func testBackdatedEntryIsPlacedAtMiddayOfItsDay() {
+        let calendar = Calendar.current
+        let now = Date()
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let e = entry(day: DayKey.key(for: yesterday), created: now, mood: 3)
+        let date = HealthMood.date(for: e, calendar: calendar)
+        XCTAssertTrue(calendar.isDate(date, inSameDayAs: yesterday))
+        XCTAssertEqual(calendar.component(.hour, from: date), 12)
+        let sameDay = entry(day: DayKey.key(for: now), created: now, mood: 3)
+        XCTAssertEqual(HealthMood.date(for: sameDay, calendar: calendar), now)
+    }
+}
+
+final class TranscriptSegmentsTests: XCTestCase {
+    func testRevisionsOfOneUtteranceReplaceEachOther() {
+        var t = TranscriptSegments()
+        t.update("I went", utteranceEnded: false)
+        t.update("I went to the", utteranceEnded: false)
+        t.update("I went to the store.", utteranceEnded: false)
+        XCTAssertEqual(t.text, "I went to the store.")
+    }
+
+    func testUtteranceEndKeepsTextWhenTheNextStarts() {
+        var t = TranscriptSegments()
+        t.update("I went to the store.", utteranceEnded: false)
+        t.update("I went to the store.", utteranceEnded: true)
+        t.update("Then", utteranceEnded: false)
+        t.update("Then I came home.", utteranceEnded: false)
+        XCTAssertEqual(t.text, "I went to the store. Then I came home.")
+    }
+
+    func testRestartWithoutMetadataIsStillKept() {
+        var t = TranscriptSegments()
+        t.update("It was a long day at work and I was tired.", utteranceEnded: false)
+        t.update("Dinner", utteranceEnded: false)
+        t.update("Dinner was good.", utteranceEnded: false)
+        XCTAssertEqual(t.text, "It was a long day at work and I was tired. Dinner was good.")
+    }
+
+    func testShorterRevisionWithTheSameStartIsNotARestart() {
+        var t = TranscriptSegments()
+        t.update("I think that that is", utteranceEnded: false)
+        t.update("I think that is", utteranceEnded: false)
+        XCTAssertEqual(t.text, "I think that is")
     }
 }

@@ -23,7 +23,6 @@ Sunday weekly review unless they are marked private.
   opens the app, asks for Face ID and lands in a new entry.
 - A **daily reminder** (Account → Reminder, off by default) is a local
   notification with fixed text; tapping it starts a voice entry.
-- Returning to the app asks for Face ID right away, without tapping Unlock.
 
 ## Privacy model
 

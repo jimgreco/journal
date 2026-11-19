@@ -7,8 +7,8 @@ struct JournalApp: App {
     @State private var session = Session()
     @State private var store = EntryStore()
     @State private var lock = AppLock()
+    @State private var healthMood = HealthMood()
     @Environment(\.scenePhase) private var scenePhase
-    @State private var wasInBackground = false
 
     init() {
         if let clientID = GoogleConfig.clientID {
@@ -24,28 +24,19 @@ struct JournalApp: App {
                 .environment(session)
                 .environment(store)
                 .environment(lock)
-                // Hide entries in the app switcher and whenever the app isn't in front.
-                .overlay {
-                    if scenePhase != .active {
-                        PrivacyCover()
+                .environment(healthMood)
+                .onAppear {
+                    store.onLocalChange = { [healthMood] entry in
+                        Task { await healthMood.update(entry) }
                     }
                 }
                 .onOpenURL { url in GIDSignIn.sharedInstance.handle(url) }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase == .background {
-                        lock.lock()
-                        wasInBackground = true
-                    }
-                    // Coming back from the background, ask for Face ID right away
-                    // instead of waiting for a tap on Unlock. Only once per return:
-                    // the Face ID sheet itself makes the app inactive and active again.
-                    if phase == .active, wasInBackground {
-                        wasInBackground = false
-                        if session.isSignedIn, lock.isLocked {
-                            Task { await lock.unlock() }
-                        }
-                    }
-                    if phase == .active, session.isSignedIn, !lock.isLocked {
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    if phase == .background { lock.lock() }
+                    guard phase == .active, session.isSignedIn else { return }
+                    if lock.isLocked {
+                        Task { await lock.unlockAutomaticallyIfNeeded() }
+                    } else {
                         Task { await store.sync(with: SessionRemote(session: session)) }
                     }
                 }
@@ -78,19 +69,34 @@ struct RootView: View {
     @Environment(Session.self) private var session
     @Environment(EntryStore.self) private var store
     @Environment(AppLock.self) private var lock
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var shield = ShieldWindow()
+
+    /// The list and any open entry stay in place underneath the shield, so
+    /// unlocking returns to exactly where you were.
+    private var shieldVisible: Bool {
+        scenePhase != .active || (session.isSignedIn && lock.isLocked)
+    }
 
     var body: some View {
         Group {
-            if !session.isSignedIn {
-                SignInView()
-            } else if lock.isLocked {
-                LockView()
-            } else {
+            if session.isSignedIn {
                 EntryListView()
+            } else {
+                SignInView()
             }
         }
         .animation(.default, value: session.isSignedIn)
-        .animation(.default, value: lock.isLocked)
+        .onChange(of: shieldVisible, initial: true) { _, visible in
+            shield.setVisible(visible) {
+                ShieldView().environment(session).environment(lock)
+            }
+        }
+        .onChange(of: lock.isLocked) { _, locked in
+            if !locked, session.isSignedIn {
+                Task { await store.sync(with: SessionRemote(session: session)) }
+            }
+        }
         .onChange(of: session.isSignedIn) { _, signedIn in
             if signedIn {
                 Task { await store.sync(with: SessionRemote(session: session)) }
