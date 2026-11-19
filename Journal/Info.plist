@@ -42,6 +42,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Private Notes uses the camera so you can add a photo to an entry. Photos you take here aren't saved to your photo library.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Private Notes uses Face ID to keep your entries locked when you're not using it.</string>
 	<key>NSHealthShareUsageDescription</key>

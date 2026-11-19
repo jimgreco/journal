@@ -16,16 +16,19 @@ struct Entry: Codable, Identifiable, Equatable, Sendable {
     var text: String
     var mood: Int?
     var tags: [String]
+    /// Ids of attached photos, in order. The images live in `PhotoFiles` and on the server.
+    var photos: [UUID] = []
     var deleted: Bool = false
     var revision: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, entryDate, createdAt, updatedAt, source, text, mood, tags, deleted, revision
+        case id, entryDate, createdAt, updatedAt, source, text, mood, tags, photos, deleted, revision
         case isPrivate = "private"
     }
 
     init(id: UUID = UUID(), entryDate: String, createdAt: Date, updatedAt: Date, source: EntrySource,
-         isPrivate: Bool, text: String, mood: Int?, tags: [String], deleted: Bool = false, revision: Int? = nil) {
+         isPrivate: Bool, text: String, mood: Int?, tags: [String], photos: [UUID] = [], deleted: Bool = false,
+         revision: Int? = nil) {
         self.id = id
         self.entryDate = entryDate
         self.createdAt = createdAt
@@ -35,6 +38,7 @@ struct Entry: Codable, Identifiable, Equatable, Sendable {
         self.text = text
         self.mood = mood
         self.tags = tags
+        self.photos = photos
         self.deleted = deleted
         self.revision = revision
     }
@@ -50,6 +54,7 @@ struct Entry: Codable, Identifiable, Equatable, Sendable {
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
         mood = try c.decodeIfPresent(Int.self, forKey: .mood)
         tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+        photos = try c.decodeIfPresent([UUID].self, forKey: .photos) ?? []
         deleted = try c.decodeIfPresent(Bool.self, forKey: .deleted) ?? false
         revision = try c.decodeIfPresent(Int.self, forKey: .revision)
     }
@@ -57,11 +62,13 @@ struct Entry: Codable, Identifiable, Equatable, Sendable {
     static let maxTextLength = 20_000
     static let maxTags = 10
     static let maxTagLength = 32
+    static let maxPhotos = 10
 
     /// The body sent with `PUT /api/entries/:id`.
     var uploadBody: UploadBody {
         UploadBody(entryDate: entryDate, createdAt: createdAt, updatedAt: updatedAt, source: source,
-                   isPrivate: isPrivate, text: text, mood: mood, tags: tags)
+                   isPrivate: isPrivate, text: text, mood: mood, tags: tags,
+                   photos: photos.map { $0.uuidString.lowercased() })
     }
 
     struct UploadBody: Encodable {
@@ -73,9 +80,10 @@ struct Entry: Codable, Identifiable, Equatable, Sendable {
         let text: String
         let mood: Int?
         let tags: [String]
+        let photos: [String]
 
         enum CodingKeys: String, CodingKey {
-            case entryDate, createdAt, updatedAt, source, text, mood, tags
+            case entryDate, createdAt, updatedAt, source, text, mood, tags, photos
             case isPrivate = "private"
         }
 
@@ -89,6 +97,7 @@ struct Entry: Codable, Identifiable, Equatable, Sendable {
             try c.encode(text, forKey: .text)
             try c.encode(mood, forKey: .mood) // explicit null
             try c.encode(tags, forKey: .tags)
+            try c.encode(photos, forKey: .photos)
         }
     }
 }

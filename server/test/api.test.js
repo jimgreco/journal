@@ -50,7 +50,15 @@ async function startServer(store, env = baseEnv(), now) {
     const text = await response.text();
     return { status: response.status, headers: response.headers, body: text ? JSON.parse(text) : null };
   };
-  return { server, call, close: () => new Promise((r) => server.close(r)) };
+  const photo = async (method, path, { bytes, token, type = "image/jpeg" } = {}) => {
+    const response = await fetch(base + path, {
+      method,
+      headers: { ...(bytes ? { "content-type": type } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: bytes
+    });
+    return { status: response.status, type: response.headers.get("content-type"), bytes: Buffer.from(await response.arrayBuffer()) };
+  };
+  return { server, call, photo, close: () => new Promise((r) => server.close(r)) };
 }
 
 function entry(overrides = {}) {
@@ -73,7 +81,7 @@ if (pgURL) {
   stores.push(["postgres", async () => {
     const admin = new pg.Client({ connectionString: pgURL });
     await admin.connect();
-    await admin.query(`DROP TABLE IF EXISTS journal_entries, journal_sessions, journal_identities, journal_users, app_schema_versions CASCADE;
+    await admin.query(`DROP TABLE IF EXISTS journal_photos, journal_entries, journal_sessions, journal_identities, journal_users, app_schema_versions CASCADE;
       DROP SEQUENCE IF EXISTS journal_entry_revision;`);
     await admin.end();
     await migrate(pgURL);
@@ -254,6 +262,72 @@ for (const [name, makeStore] of stores) {
       } finally {
         await other.close();
       }
+    });
+
+    test("photos are stored encrypted, served back, and removed with their entry", async () => {
+      const entryId = crypto.randomUUID();
+      const keep = crypto.randomUUID();
+      const drop = crypto.randomUUID();
+      const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(2048)]);
+      for (const id of [keep, drop]) {
+        const up = await api.photo("PUT", `/api/photos/${id}?entry=${entryId}`, { token, bytes: jpeg });
+        assert.equal(up.status, 200);
+      }
+      // A retry of the same upload is fine.
+      assert.equal((await api.photo("PUT", `/api/photos/${keep}?entry=${entryId}`, { token, bytes: jpeg })).status, 200);
+
+      const saved = await api.call("PUT", `/api/entries/${entryId}`, { token, body: entry({ text: "", photos: [keep, drop] }) });
+      assert.equal(saved.status, 200, "a photo is enough without text");
+      assert.deepEqual(saved.body.photos, [keep, drop]);
+
+      const got = await api.photo("GET", `/api/photos/${keep}`, { token });
+      assert.equal(got.status, 200);
+      assert.equal(got.type, "image/jpeg");
+      assert.ok(got.bytes.equals(jpeg));
+      if (ctx.url) {
+        const db = new pg.Client({ connectionString: ctx.url });
+        await db.connect();
+        const { rows } = await db.query("SELECT ciphertext FROM journal_photos WHERE id = $1", [keep]);
+        await db.end();
+        assert.ok(!Buffer.from(rows[0].ciphertext).includes(jpeg.subarray(4, 64)), "no plaintext in the database");
+      }
+
+      const edited = await api.call("PUT", `/api/entries/${entryId}`, {
+        token, body: entry({ text: "", photos: [keep], updatedAt: "2026-11-04T22:00:00.000Z" })
+      });
+      assert.deepEqual(edited.body.photos, [keep]);
+      assert.equal((await api.photo("GET", `/api/photos/${drop}`, { token })).status, 404, "dropped photo is deleted");
+
+      const other = await startServer(ctx.store, baseEnv({ ALLOWED_EMAILS: `${OWNER},other@example.com` }));
+      try {
+        const signIn = await other.call("POST", "/auth/apple", {
+          body: { identityToken: JSON.stringify({ sub: "apple-other", email: "other@example.com", email_verified: true }) }
+        });
+        const otherToken = signIn.body.accessToken;
+        assert.equal((await other.photo("GET", `/api/photos/${keep}`, { token: otherToken })).status, 404);
+        assert.equal((await other.photo("PUT", `/api/photos/${keep}?entry=${entryId}`, { token: otherToken, bytes: jpeg })).status, 409);
+      } finally {
+        await other.close();
+      }
+
+      await api.call("DELETE", `/api/entries/${entryId}`, { token });
+      assert.equal((await api.photo("GET", `/api/photos/${keep}`, { token })).status, 404, "deleting the entry deletes its photos");
+    });
+
+    test("photo uploads are checked", async () => {
+      const entryId = crypto.randomUUID();
+      const id = crypto.randomUUID();
+      assert.equal((await api.photo("PUT", `/api/photos/${id}?entry=${entryId}`, { bytes: Buffer.from([0xff, 0xd8, 0xff]) })).status, 401);
+      assert.equal((await api.photo("PUT", `/api/photos/${id}?entry=${entryId}`, { token, bytes: Buffer.from("not a jpeg") })).status, 400);
+      assert.equal((await api.photo("PUT", `/api/photos/${id}?entry=${entryId}`, { token, bytes: Buffer.from([0xff, 0xd8, 0xff, 0]), type: "image/png" })).status, 415);
+      assert.equal((await api.photo("PUT", `/api/photos/${id}`, { token, bytes: Buffer.from([0xff, 0xd8, 0xff, 0]) })).status, 400);
+      const big = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(4 * 1024 * 1024)]);
+      const tooBig = await api.photo("PUT", `/api/photos/${id}?entry=${entryId}`, { token, bytes: big }).catch(() => ({ status: 413 }));
+      assert.equal(tooBig.status, 413);
+      const bad = await api.call("PUT", `/api/entries/${entryId}`, { token, body: entry({ photos: ["nope"] }) });
+      assert.equal(bad.status, 400);
+      const empty = await api.call("PUT", `/api/entries/${entryId}`, { token, body: entry({ text: " ", photos: [] }) });
+      assert.equal(empty.status, 400);
     });
 
     test("weekly summary hides private entries and needs its own token", async () => {

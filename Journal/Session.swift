@@ -125,6 +125,16 @@ final class Session {
         }
     }
 
+    /// Sends raw bytes (a photo), refreshing the access token once on 401.
+    func upload(_ method: String, _ path: String, data: Data, contentType: String) async throws -> Data {
+        do {
+            return try await rawData(method, path, bodyData: data, contentType: contentType, token: Keychain.read("accessToken"))
+        } catch APIError.signedOut {
+            try await refresh()
+            return try await rawData(method, path, bodyData: data, contentType: contentType, token: Keychain.read("accessToken"))
+        }
+    }
+
     private func refresh() async throws {
         if let refreshTask { return try await refreshTask.value }
         let task = Task { @MainActor in
@@ -151,13 +161,18 @@ final class Session {
     }
 
     private func rawData(_ method: String, _ path: String, body: (some Encodable)?, token: String?) async throws -> Data {
+        let encoded = try body.map { try JSONCoding.encoder.encode($0) }
+        return try await rawData(method, path, bodyData: encoded, contentType: "application/json", token: token)
+    }
+
+    private func rawData(_ method: String, _ path: String, bodyData: Data?, contentType: String, token: String?) async throws -> Data {
         guard let url = URL(string: path, relativeTo: baseURL) else { throw APIError.server(0, "Bad URL") }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: bodyData.map { $0.count > 256_000 ? 120 : 30 } ?? 30)
         request.httpMethod = method
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONCoding.encoder.encode(body)
+        if let bodyData {
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+            request.httpBody = bodyData
         }
         let data: Data
         let response: URLResponse

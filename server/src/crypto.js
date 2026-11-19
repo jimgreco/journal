@@ -29,24 +29,45 @@ function aad(userId, entryId) {
   return Buffer.from(`journal:v1:${userId}:${entryId}`);
 }
 
-export function seal(keys, userId, entryId, content) {
+// Photos use their own AAD label, so a photo ciphertext can never be opened
+// as an entry (or the reverse), nor moved to another user or photo id.
+function photoAAD(userId, photoId) {
+  return Buffer.from(`journal-photo:v1:${userId}:${photoId}`);
+}
+
+function sealBytes(keys, aadBytes, plain) {
   const key = keys.ring.get(keys.activeId);
   const nonce = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", key, nonce);
-  cipher.setAAD(aad(userId, entryId));
-  const body = Buffer.concat([cipher.update(JSON.stringify(content), "utf8"), cipher.final()]);
+  cipher.setAAD(aadBytes);
+  const body = Buffer.concat([cipher.update(plain), cipher.final()]);
   return { keyId: keys.activeId, nonce, ciphertext: Buffer.concat([body, cipher.getAuthTag()]) };
 }
 
-export function open(keys, userId, entryId, { keyId, nonce, ciphertext }) {
+function openBytes(keys, aadBytes, { keyId, nonce, ciphertext }) {
   const key = keys.ring.get(Number(keyId));
   if (!key) throw new Error(`no decryption key ${keyId}`);
   const data = Buffer.from(ciphertext);
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(nonce));
-  decipher.setAAD(aad(userId, entryId));
+  decipher.setAAD(aadBytes);
   decipher.setAuthTag(data.subarray(data.length - 16));
-  const plain = Buffer.concat([decipher.update(data.subarray(0, data.length - 16)), decipher.final()]);
-  return JSON.parse(plain.toString("utf8"));
+  return Buffer.concat([decipher.update(data.subarray(0, data.length - 16)), decipher.final()]);
+}
+
+export function seal(keys, userId, entryId, content) {
+  return sealBytes(keys, aad(userId, entryId), Buffer.from(JSON.stringify(content), "utf8"));
+}
+
+export function open(keys, userId, entryId, sealed) {
+  return JSON.parse(openBytes(keys, aad(userId, entryId), sealed).toString("utf8"));
+}
+
+export function sealPhoto(keys, userId, photoId, bytes) {
+  return sealBytes(keys, photoAAD(userId, photoId), bytes);
+}
+
+export function openPhoto(keys, userId, photoId, sealed) {
+  return openBytes(keys, photoAAD(userId, photoId), sealed);
 }
 
 export function sha256Hex(value) {

@@ -7,7 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		14AEA40D401237E7E6248658 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = C26112E97A4386BD0729B789 /* WhisperKit */; };
 		1810E0799220721D83C808BF /* HealthMood.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2DB5E08CBCABC706F2127F0 /* HealthMood.swift */; };
+		305591482500BCAF6725591A /* Whisper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9368EFDB22AB0609081BE3 /* Whisper.swift */; };
 		4F625182A8C4720A57805065 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B7B45A1694DD8AE88BB65EC4 /* Assets.xcassets */; };
 		51901B7535AD7888CBABA238 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47616C7305638AC933C122DA /* Models.swift */; };
 		557870FD7AD92F320D76324E /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 4E9EEAAE3191B71D19E6373C /* GoogleSignIn */; };
@@ -17,17 +19,16 @@
 		825D16C307668858F1764AD7 /* JournalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECD0FF05B4A08F5DCFDB7BD /* JournalTests.swift */; };
 		8AEBF08738DAE93E829B8DD3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3BA5AD90540C9E7F1D239DBE /* PrivacyInfo.xcprivacy */; };
 		9044284DB62E320100F097E9 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05612FD78ABEB63E5936C352 /* SignInView.swift */; };
+		90AE9196CDBDE7057B2038E1 /* Photos.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA5060D8040BA0F9F33347B /* Photos.swift */; };
 		A049B8E962D62E1E28FF8B55 /* Dictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A8E5CFAF2E38FC83C0EF8D /* Dictation.swift */; };
 		A05F3246AC4DC57E5A23660C /* JournalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F2BD1F394E623767D277F8 /* JournalApp.swift */; };
 		A89EE8984E4CD1E222D3770E /* EntryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA5ADFD4BC3A700C730CCF79 /* EntryStore.swift */; };
 		A9FE60AA5D8D9C62DB25B154 /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CC3AD9D327262822487008A /* EntryListView.swift */; };
 		C1D77C5E227F493ADD0D0D53 /* Shield.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6881C0084D2325A909A99C18 /* Shield.swift */; };
+		CA8908FE6CBA2077F175EDFC /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38DABD0DACBFEC20A871C13F /* Capture.swift */; };
 		CD101B6474C5DDC6FF75395A /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7262F6399A3E96BEAEF29918 /* Keychain.swift */; };
+		D476FCC53D4C9EAFAA1E81E2 /* Reminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89E5B10D648822F38FC5A556 /* Reminder.swift */; };
 		F14DB7BA64122493CF2C69DF /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1E3B0440C255A97703BB0D /* SettingsView.swift */; };
-		C1A9E0000000000000000002 /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A9E0000000000000000001 /* Capture.swift */; };
-		C1A9E0000000000000000004 /* Reminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A9E0000000000000000003 /* Reminder.swift */; };
-		C1A9E0000000000000000012 /* Whisper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A9E0000000000000000011 /* Whisper.swift */; };
-		C1A9E0000000000000000015 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = C1A9E0000000000000000014 /* WhisperKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,13 +46,17 @@
 		0CC3AD9D327262822487008A /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
 		0ECD0FF05B4A08F5DCFDB7BD /* JournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalTests.swift; sourceTree = "<group>"; };
 		248F89450D98F4EDBF34CAF6 /* AppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLock.swift; sourceTree = "<group>"; };
+		38DABD0DACBFEC20A871C13F /* Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture.swift; sourceTree = "<group>"; };
 		3BA5AD90540C9E7F1D239DBE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		47616C7305638AC933C122DA /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		4C1E3B0440C255A97703BB0D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		6881C0084D2325A909A99C18 /* Shield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shield.swift; sourceTree = "<group>"; };
 		68A8E5CFAF2E38FC83C0EF8D /* Dictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dictation.swift; sourceTree = "<group>"; };
+		6BA5060D8040BA0F9F33347B /* Photos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photos.swift; sourceTree = "<group>"; };
 		7262F6399A3E96BEAEF29918 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 		80251EF6DF2C6304FDF6EB37 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		89E5B10D648822F38FC5A556 /* Reminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminder.swift; sourceTree = "<group>"; };
+		8B9368EFDB22AB0609081BE3 /* Whisper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Whisper.swift; sourceTree = "<group>"; };
 		A2DB5E08CBCABC706F2127F0 /* HealthMood.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMood.swift; sourceTree = "<group>"; };
 		A7780CD43DD3564DAF498821 /* JournalTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JournalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B5F2BD1F394E623767D277F8 /* JournalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalApp.swift; sourceTree = "<group>"; };
@@ -61,9 +66,6 @@
 		E408E0F0424F70AFCF0E13D4 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		E48AE2FC32E0AA7B3D92097F /* ComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeView.swift; sourceTree = "<group>"; };
 		EA5ADFD4BC3A700C730CCF79 /* EntryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryStore.swift; sourceTree = "<group>"; };
-		C1A9E0000000000000000001 /* Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture.swift; sourceTree = "<group>"; };
-		C1A9E0000000000000000003 /* Reminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminder.swift; sourceTree = "<group>"; };
-		C1A9E0000000000000000011 /* Whisper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Whisper.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,7 +74,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				557870FD7AD92F320D76324E /* GoogleSignIn in Frameworks */,
-				C1A9E0000000000000000015 /* WhisperKit in Frameworks */,
+				14AEA40D401237E7E6248658 /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -110,6 +112,7 @@
 			children = (
 				248F89450D98F4EDBF34CAF6 /* AppLock.swift */,
 				B7B45A1694DD8AE88BB65EC4 /* Assets.xcassets */,
+				38DABD0DACBFEC20A871C13F /* Capture.swift */,
 				E48AE2FC32E0AA7B3D92097F /* ComposeView.swift */,
 				68A8E5CFAF2E38FC83C0EF8D /* Dictation.swift */,
 				0CC3AD9D327262822487008A /* EntryListView.swift */,
@@ -120,14 +123,14 @@
 				B5F2BD1F394E623767D277F8 /* JournalApp.swift */,
 				7262F6399A3E96BEAEF29918 /* Keychain.swift */,
 				47616C7305638AC933C122DA /* Models.swift */,
+				6BA5060D8040BA0F9F33347B /* Photos.swift */,
 				3BA5AD90540C9E7F1D239DBE /* PrivacyInfo.xcprivacy */,
+				89E5B10D648822F38FC5A556 /* Reminder.swift */,
 				E408E0F0424F70AFCF0E13D4 /* Session.swift */,
 				4C1E3B0440C255A97703BB0D /* SettingsView.swift */,
 				6881C0084D2325A909A99C18 /* Shield.swift */,
 				05612FD78ABEB63E5936C352 /* SignInView.swift */,
-				C1A9E0000000000000000011 /* Whisper.swift */,
-				C1A9E0000000000000000003 /* Reminder.swift */,
-				C1A9E0000000000000000001 /* Capture.swift */,
+				8B9368EFDB22AB0609081BE3 /* Whisper.swift */,
 			);
 			path = Journal;
 			sourceTree = "<group>";
@@ -150,7 +153,7 @@
 			name = Journal;
 			packageProductDependencies = (
 				4E9EEAAE3191B71D19E6373C /* GoogleSignIn */,
-				C1A9E0000000000000000014 /* WhisperKit */,
+				C26112E97A4386BD0729B789 /* WhisperKit */,
 			);
 			productName = Journal;
 			productReference = C8F732805C3770017EFF8353 /* Journal.app */;
@@ -202,7 +205,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				90A852D2347E35E43CEBD4A0 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
-				C1A9E0000000000000000013 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+				E78A8901CC069559FF501CE8 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 543DFF2353434344FA5FD340 /* Products */;
@@ -233,6 +236,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7E68EA0AEE1B126F9187BD91 /* AppLock.swift in Sources */,
+				CA8908FE6CBA2077F175EDFC /* Capture.swift in Sources */,
 				7E361718CDB18219FA3D2E61 /* ComposeView.swift in Sources */,
 				A049B8E962D62E1E28FF8B55 /* Dictation.swift in Sources */,
 				A9FE60AA5D8D9C62DB25B154 /* EntryListView.swift in Sources */,
@@ -241,13 +245,13 @@
 				A05F3246AC4DC57E5A23660C /* JournalApp.swift in Sources */,
 				CD101B6474C5DDC6FF75395A /* Keychain.swift in Sources */,
 				51901B7535AD7888CBABA238 /* Models.swift in Sources */,
+				90AE9196CDBDE7057B2038E1 /* Photos.swift in Sources */,
+				D476FCC53D4C9EAFAA1E81E2 /* Reminder.swift in Sources */,
 				63FE88B5ACCAE83AE2B0DDA2 /* Session.swift in Sources */,
 				F14DB7BA64122493CF2C69DF /* SettingsView.swift in Sources */,
 				C1D77C5E227F493ADD0D0D53 /* Shield.swift in Sources */,
 				9044284DB62E320100F097E9 /* SignInView.swift in Sources */,
-				C1A9E0000000000000000012 /* Whisper.swift in Sources */,
-				C1A9E0000000000000000004 /* Reminder.swift in Sources */,
-				C1A9E0000000000000000002 /* Capture.swift in Sources */,
+				305591482500BCAF6725591A /* Whisper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -518,7 +522,7 @@
 				minimumVersion = 7.1.0;
 			};
 		};
-		C1A9E0000000000000000013 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+		E78A8901CC069559FF501CE8 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift";
 			requirement = {
@@ -534,9 +538,9 @@
 			package = 90A852D2347E35E43CEBD4A0 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignIn;
 		};
-		C1A9E0000000000000000014 /* WhisperKit */ = {
+		C26112E97A4386BD0729B789 /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C1A9E0000000000000000013 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			package = E78A8901CC069559FF501CE8 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
 			productName = WhisperKit;
 		};
 /* End XCSwiftPackageProductDependency section */

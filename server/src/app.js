@@ -1,14 +1,14 @@
 import crypto from "node:crypto";
 import appleSignin from "apple-signin-auth";
 import { OAuth2Client } from "google-auth-library";
-import { open, seal, sha256Hex, constantTimeEqualHex, parseKeyRing } from "./crypto.js";
+import { open, seal, openPhoto, sealPhoto, sha256Hex, constantTimeEqualHex, parseKeyRing } from "./crypto.js";
 import { ConflictError } from "./store.js";
 import { weeklySummary, isMonday } from "./weekly.js";
 
 const ACCESS_TTL_MS = 15 * 60_000;
 const REFRESH_TTL_MS = 120 * 24 * 60 * 60_000;
 const MAX_BODY_BYTES = 256 * 1024;
-export const LIMITS = { textChars: 20_000, tags: 10, tagChars: 32, pageSize: 500 };
+export const LIMITS = { textChars: 20_000, tags: 10, tagChars: 32, pageSize: 500, photos: 10, photoBytes: 4 * 1024 * 1024 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -89,6 +89,24 @@ async function readJSON(request) {
   }
 }
 
+// Raw JPEG upload body for PUT /api/photos/:id.
+async function readPhoto(request) {
+  const type = String(request.headers["content-type"] || "");
+  if (type !== "image/jpeg") throw new HttpError(415, "content-type must be image/jpeg");
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > LIMITS.photoBytes) throw new HttpError(413, "photo too large");
+    chunks.push(chunk);
+  }
+  const bytes = Buffer.concat(chunks);
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
+    throw new HttpError(400, "photo must be a JPEG");
+  }
+  return bytes;
+}
+
 function isDateKey(value) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -107,7 +125,12 @@ export function validateEntry(body, now) {
   if (!isTimestamp(body.updatedAt)) errors.push("updatedAt must be an ISO-8601 timestamp");
   if (body.source !== "text" && body.source !== "voice") errors.push("source must be text or voice");
   if (typeof body.private !== "boolean") errors.push("private must be a boolean");
-  if (typeof body.text !== "string" || !body.text.trim()) errors.push("text is required");
+  const photos = body.photos ?? [];
+  const photosValid = Array.isArray(photos) && photos.length <= LIMITS.photos
+    && photos.every((p) => typeof p === "string" && UUID.test(p)) && new Set(photos.map((p) => p.toLowerCase())).size === photos.length;
+  if (!photosValid) errors.push(`photos must be up to ${LIMITS.photos} distinct photo ids`);
+  if (typeof body.text !== "string") errors.push("text is required");
+  else if (!body.text.trim() && !(photosValid && photos.length)) errors.push("text or a photo is required");
   else if (body.text.length > LIMITS.textChars) errors.push(`text is limited to ${LIMITS.textChars} characters`);
   const mood = body.mood ?? null;
   if (mood !== null && !(Number.isInteger(mood) && mood >= 1 && mood <= 5)) errors.push("mood must be 1-5 or null");
@@ -125,7 +148,7 @@ export function validateEntry(body, now) {
     updatedAt: clamp(body.updatedAt),
     source: body.source,
     private: body.private,
-    content: { text: body.text, mood, tags: [...new Set(tags.map((t) => t.trim()))] }
+    content: { text: body.text, mood, tags: [...new Set(tags.map((t) => t.trim()))], photos: photos.map((p) => p.toLowerCase()) }
   };
 }
 
@@ -139,9 +162,16 @@ export function decryptEntry(keys, row) {
     private: row.private,
     revision: row.revision
   };
-  if (row.deletedAt) return { ...base, deleted: true, text: null, mood: null, tags: [] };
+  if (row.deletedAt) return { ...base, deleted: true, text: null, mood: null, tags: [], photos: [] };
   const content = open(keys, row.userId, row.id, row);
-  return { ...base, deleted: false, text: content.text, mood: content.mood ?? null, tags: content.tags ?? [] };
+  return {
+    ...base,
+    deleted: false,
+    text: content.text,
+    mood: content.mood ?? null,
+    tags: content.tags ?? [],
+    photos: content.photos ?? []
+  };
 }
 
 // ---- app -----------------------------------------------------------------
@@ -391,6 +421,7 @@ export function createApp({ store, config, verifyAppleToken, verifyGoogleToken, 
           updatedAt: entry.updatedAt,
           source: entry.source,
           private: entry.private,
+          photoIds: entry.content.photos,
           ...sealed
         });
         return send(response, 200, decryptEntry(config.keys, stored));
@@ -398,6 +429,35 @@ export function createApp({ store, config, verifyAppleToken, verifyGoogleToken, 
       if (method === "DELETE") {
         const stored = await store.deleteEntry(user.id, id, now().toISOString());
         return send(response, 200, decryptEntry(config.keys, stored));
+      }
+    }
+
+    // Photos: PUT /api/photos/:id?entry=<entry id> with a JPEG body, before the
+    // entry that lists the photo is saved; GET returns the JPEG.
+    const photoMatch = path.match(/^\/api\/photos\/([^/]+)$/);
+    if (photoMatch) {
+      const id = photoMatch[1].toLowerCase();
+      if (!UUID.test(id)) throw new HttpError(400, "photo id must be a UUID");
+      if (method === "PUT") {
+        const entryId = String(url.searchParams.get("entry") || "").toLowerCase();
+        if (!UUID.test(entryId)) throw new HttpError(400, "entry must be an entry id");
+        const bytes = await readPhoto(request);
+        await store.putPhoto({ id, userId: user.id, entryId, ...sealPhoto(config.keys, user.id, id, bytes) });
+        return send(response, 200, { ok: true });
+      }
+      if (method === "GET") {
+        const photo = await store.getPhoto(user.id, id);
+        if (!photo) return send(response, 404, { error: "not found" });
+        const bytes = openPhoto(config.keys, user.id, id, photo);
+        response.writeHead(200, {
+          "content-type": "image/jpeg",
+          "content-length": String(bytes.length),
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'"
+        });
+        return response.end(bytes);
       }
     }
 
