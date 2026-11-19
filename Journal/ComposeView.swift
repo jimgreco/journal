@@ -46,7 +46,7 @@ struct ComposeView: View {
             Form {
                 Section {
                     ZStack(alignment: .topLeading) {
-                        if text.isEmpty && !dictation.isRecording {
+                        if text.isEmpty && !dictation.isBusy {
                             Text("What's on your mind?")
                                 .foregroundStyle(.tertiary)
                                 .padding(.top, 8)
@@ -55,7 +55,7 @@ struct ComposeView: View {
                         TextEditor(text: $text)
                             .frame(minHeight: 220)
                             .focused($editorFocused)
-                            .disabled(dictation.isRecording)
+                            .disabled(dictation.isBusy)
                     }
                     dictationControls
                 }
@@ -102,13 +102,13 @@ struct ComposeView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).disabled(trimmed.isEmpty || dictation.isRecording)
+                    Button("Save", action: save).disabled(trimmed.isEmpty || dictation.isBusy)
                 }
             }
             .confirmationDialog("Discard this entry?", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("Discard", role: .destructive) { close() }
             }
-            .interactiveDismissDisabled(hasChanges || dictation.isRecording)
+            .interactiveDismissDisabled(hasChanges || dictation.isBusy)
             .onChange(of: dictation.transcript) { _, transcript in
                 guard !transcript.isEmpty else { return }
                 let separator = textBeforeDictation.isEmpty || textBeforeDictation.hasSuffix("\n") ? "" : " "
@@ -154,6 +154,12 @@ struct ComposeView: View {
                     .progressViewStyle(.linear)
                     .tint(.red)
                     .accessibilityLabel("Listening")
+            } else if dictation.isPreparing || dictation.isFinishing {
+                ProgressView()
+                Text(dictation.isPreparing ? "Getting ready…" : "Finishing your last words…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer()
             } else {
                 Button {
                     Task { await beginDictation() }
