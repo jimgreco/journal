@@ -62,12 +62,7 @@ struct ComposeView: View {
 
                 Section {
                     DatePicker("Day", selection: $day, in: ...Date(), displayedComponents: .date)
-                    Picker("Mood", selection: $mood) {
-                        Text("None").tag(Int?.none)
-                        ForEach(Mood.allCases) { m in
-                            Label(m.label, systemImage: m.symbol).tag(Int?.some(m.rawValue))
-                        }
-                    }
+                    moodRow
                     TextField("Tags, separated by commas", text: $tagsText)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -136,6 +131,28 @@ struct ComposeView: View {
                     try? await Task.sleep(for: .milliseconds(400))
                     await beginDictation()
                 }
+            }
+        }
+    }
+
+    /// One tap sets the mood; tapping the selected one clears it.
+    private var moodRow: some View {
+        HStack(spacing: 4) {
+            Text("Mood")
+            Spacer()
+            ForEach(Mood.allCases) { m in
+                let selected = mood == m.rawValue
+                Button {
+                    mood = selected ? nil : m.rawValue
+                } label: {
+                    Image(systemName: m.symbol)
+                        .frame(width: 36, height: 36)
+                        .background(selected ? Color.accentColor.opacity(0.18) : Color.clear, in: Circle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                .accessibilityLabel(m.label)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
     }

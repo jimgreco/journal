@@ -1,5 +1,6 @@
 import GoogleSignIn
 import SwiftUI
+import UserNotifications
 
 @main
 struct JournalApp: App {
@@ -13,6 +14,8 @@ struct JournalApp: App {
         if let clientID = GoogleConfig.clientID {
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
         }
+        // Set before launch finishes so a tap on the reminder is delivered.
+        UNUserNotificationCenter.current().delegate = Reminder.shared
     }
 
     var body: some Scene {
@@ -99,6 +102,8 @@ struct RootView: View {
                 Task { await store.sync(with: SessionRemote(session: session)) }
             } else {
                 store.reset()
+                CaptureRequest.shared.clear()
+                Reminder.shared.turnOff()
             }
         }
     }
