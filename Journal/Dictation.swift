@@ -72,6 +72,8 @@ final class Dictation {
     private(set) var isPreparing = false
     /// After Stop, while the last words are still being transcribed.
     private(set) var isFinishing = false
+    /// Part of finishing: Whisper is rewriting the take.
+    private(set) var isPolishing = false
     private(set) var transcript = ""
     private var segments = TranscriptSegments()
     private(set) var level: Float = 0
@@ -90,6 +92,9 @@ final class Dictation {
     /// format, to whichever recognizer is running.
     private var sinkFactory: ((AVAudioFormat) -> ((AVAudioPCMBuffer) -> Void)?)?
     private var observers: [NSObjectProtocol] = []
+    /// This take's audio, in memory, for Whisper. Nil when Whisper is off.
+    private var collector: SampleCollector?
+    private var polish: Task<String?, Never>?
 
     // SpeechTranscriber
     private var analyzer: SpeechAnalyzer?
@@ -113,6 +118,7 @@ final class Dictation {
         segments = TranscriptSegments()
         emptyRestarts = 0
         isUsingOlderRecognizer = false
+        collector = WhisperModel.shared.isOn ? SampleCollector() : nil
         session += 1
         let current = session
         isPreparing = true
@@ -176,16 +182,45 @@ final class Dictation {
                 }
                 await finishing.value
                 timeout.cancel()
-                if self.session == current { self.tearDown() }
+                await self.complete(session: current)
             }
         } else {
             // The recognizer's final result ends the session; this is the backstop.
             requestBox?.endAudio()
             Task {
                 try? await Task.sleep(for: .seconds(5))
-                if self.session == current { self.tearDown() }
+                await self.complete(session: current)
             }
         }
+    }
+
+    /// Stop waiting for Whisper and keep the live transcript.
+    func skipPolish() {
+        guard isPolishing else { return }
+        polish?.cancel()
+        tearDown()
+    }
+
+    /// The live transcript is final. If Whisper is loaded, have it transcribe
+    /// the whole take again and use that instead, then end the session.
+    private func complete(session current: Int) async {
+        guard session == current, isFinishing, !isPolishing else { return }
+        let samples = collector?.drain() ?? []
+        if WhisperModel.shared.isReady, !samples.isEmpty {
+            isPolishing = true
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            let work = Task { await WhisperModel.shared.transcribe(samples) }
+            polish = work
+            let better = await work.value
+            // Skipped, or a new take has started.
+            guard session == current else { return }
+            if let better {
+                segments = TranscriptSegments()
+                segments.set(better, isFinal: true)
+                transcript = segments.text
+            }
+        }
+        tearDown()
     }
 
     // MARK: - SpeechTranscriber
@@ -292,7 +327,7 @@ final class Dictation {
                 if self.isRecording {
                     self.recoverRecognition(session: current)
                 } else {
-                    self.tearDown()
+                    await self.complete(session: current)
                 }
             }
         }
@@ -320,9 +355,17 @@ final class Dictation {
         guard format.sampleRate > 0, format.channelCount > 0, let sink = sinkFactory?(format) else {
             throw DictationError(message: "The microphone isn't available right now. Try again in a moment.")
         }
+        // A second copy of the audio, resampled for Whisper, when it's on.
+        let collector = self.collector
+        let whisperFormat = collector == nil ? nil : WhisperModel.audioFormat
+        let whisperConverter = whisperFormat.flatMap { AVAudioConverter(from: format, to: $0) }
         node.removeTap(onBus: 0)
         node.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             sink(buffer)
+            if let collector, let whisperConverter, let whisperFormat,
+               let resampled = Self.convert(buffer, with: whisperConverter, to: whisperFormat) {
+                collector.append(resampled)
+            }
             let level = Self.rms(buffer)
             Task { @MainActor in self?.level = level }
         }
@@ -397,8 +440,11 @@ final class Dictation {
         task = nil
         recognizer = nil
 
+        polish = nil
+        collector = nil
         isRecording = false
         isFinishing = false
+        isPolishing = false
         level = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }

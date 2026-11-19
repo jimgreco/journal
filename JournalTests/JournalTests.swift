@@ -333,3 +333,32 @@ final class TranscriptSegmentsTests: XCTestCase {
         XCTAssertEqual(t.text, "It was loud on the street It got quieter.")
     }
 }
+
+final class WhisperTests: XCTestCase {
+    func testCleanDropsNoiseTagsAndExtraSpaces() {
+        XCTAssertEqual(WhisperModel.clean(" [BLANK_AUDIO] Dropped her off at school.  [MUSIC] It went well. "),
+                       "Dropped her off at school. It went well.")
+        XCTAssertEqual(WhisperModel.clean("[BLANK_AUDIO]"), "")
+    }
+
+    func testModelFolderIsRememberedRelativeToTheBase() {
+        let base = URL(fileURLWithPath: "/base/A/Application Support/WhisperModels", isDirectory: true)
+        let model = base.appendingPathComponent("models/argmaxinc/whisperkit-coreml/turbo", isDirectory: true)
+        XCTAssertEqual(WhisperModel.relativePath(of: model, in: base), "models/argmaxinc/whisperkit-coreml/turbo")
+    }
+
+    func testCollectorHandsOverSamplesOnceAndGivesUpWhenTooLong() {
+        let collector = SampleCollector()
+        let chunk = [Float](repeating: 0.5, count: 1_000)
+        chunk.withUnsafeBufferPointer { collector.append($0) }
+        chunk.withUnsafeBufferPointer { collector.append($0) }
+        XCTAssertEqual(collector.drain().count, 2_000)
+        XCTAssertTrue(collector.drain().isEmpty)
+
+        let long = SampleCollector()
+        let big = [Float](repeating: 0, count: SampleCollector.maxSamples / 2 + 1)
+        big.withUnsafeBufferPointer { long.append($0) }
+        big.withUnsafeBufferPointer { long.append($0) }
+        XCTAssertTrue(long.drain().isEmpty)
+    }
+}
