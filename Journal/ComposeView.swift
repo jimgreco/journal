@@ -184,12 +184,27 @@ struct ComposeView: View {
                     Label(text.isEmpty ? "Speak" : "Keep talking", systemImage: "mic.fill")
                 }
                 Spacer()
-                Text("Transcribed on this iPhone").font(.caption2).foregroundStyle(.secondary)
+                Text(speechModelNote).font(.caption2).foregroundStyle(.secondary)
             }
         }
         .buttonStyle(.borderless)
+        if dictation.isRecording, dictation.isUsingOlderRecognizer {
+            Text("Using the basic speech model for this entry. The better one isn't ready yet.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
         if let error = dictation.error {
             Text(error).font(.footnote).foregroundStyle(.orange)
+        }
+    }
+
+    private var speechModelNote: String {
+        switch SpeechModel.shared.state {
+        case .downloading: "Better speech model downloading…"
+        case .failed: "Better speech model not downloaded yet"
+        case .unsupported: "Basic speech model · on this iPhone"
+        case .ready: "Better speech model · on this iPhone"
+        case .unknown: "Transcribed on this iPhone"
         }
     }
 

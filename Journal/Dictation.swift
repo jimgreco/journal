@@ -3,6 +3,59 @@ import Foundation
 import Observation
 import Speech
 
+/// Whether the newer on-device speech model is on this iPhone yet.
+///
+/// The model is a system download. Fetching it as soon as the journal opens,
+/// rather than on the first dictation, means voice entries rarely have to
+/// fall back to the older, weaker recognizer.
+@MainActor
+@Observable
+final class SpeechModel {
+    static let shared = SpeechModel()
+
+    enum State {
+        case unknown, unsupported, downloading, ready, failed
+    }
+
+    private(set) var state: State = .unknown
+    private var task: Task<Void, Never>?
+
+    func prepare() {
+        guard task == nil, state != .ready, state != .unsupported else { return }
+        task = Task {
+            defer { task = nil }
+            guard SpeechTranscriber.isAvailable, let locale = await Self.locale() else {
+                state = .unsupported
+                return
+            }
+            do {
+                let transcriber = Self.transcriber(for: locale)
+                if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                    state = .downloading
+                    try await request.downloadAndInstall()
+                }
+                state = .ready
+            } catch {
+                state = .failed
+            }
+        }
+    }
+
+    func markReady() {
+        state = .ready
+    }
+
+    static func locale() async -> Locale? {
+        if let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale.current) { return locale }
+        return await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en-US"))
+    }
+
+    static func transcriber(for locale: Locale) -> SpeechTranscriber {
+        SpeechTranscriber(locale: locale, transcriptionOptions: [],
+                          reportingOptions: [.volatileResults], attributeOptions: [])
+    }
+}
+
 /// Live speech-to-text that runs only on the iPhone.
 ///
 /// Uses the iOS 26 `SpeechTranscriber` model, which runs entirely on the
@@ -23,6 +76,9 @@ final class Dictation {
     private var segments = TranscriptSegments()
     private(set) var level: Float = 0
     var error: String?
+    /// True when this take is using the older recognizer because the newer
+    /// model isn't available yet.
+    private(set) var isUsingOlderRecognizer = false
 
     var isBusy: Bool { isRecording || isPreparing || isFinishing }
 
@@ -39,7 +95,6 @@ final class Dictation {
     private var analyzer: SpeechAnalyzer?
     private var analyzerInput: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
-    private var modelDownload: Task<Void, Never>?
 
     // Older recognizer
     private var recognizer: SFSpeechRecognizer?
@@ -57,6 +112,7 @@ final class Dictation {
         transcript = ""
         segments = TranscriptSegments()
         emptyRestarts = 0
+        isUsingOlderRecognizer = false
         session += 1
         let current = session
         isPreparing = true
@@ -138,26 +194,17 @@ final class Dictation {
     /// caller falls back to the older recognizer.
     private func startAnalyzer(session current: Int) async -> Bool {
         guard SpeechTranscriber.isAvailable else { return false }
-        var locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale.current)
-        if locale == nil {
-            locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en-US"))
-        }
-        guard let locale else { return false }
+        guard let locale = await SpeechModel.locale() else { return false }
 
         do {
-            let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [],
-                                                reportingOptions: [.volatileResults], attributeOptions: [])
-            if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-                // The model isn't on this iPhone yet. Fetch it in the
-                // background for next time instead of making this entry wait.
-                if modelDownload == nil {
-                    modelDownload = Task { [weak self] in
-                        _ = try? await request.downloadAndInstall()
-                        self?.modelDownload = nil
-                    }
-                }
+            let transcriber = SpeechModel.transcriber(for: locale)
+            if try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) != nil {
+                // The model isn't on this iPhone yet. Keep fetching it in the
+                // background instead of making this entry wait.
+                SpeechModel.shared.prepare()
                 return false
             }
+            SpeechModel.shared.markReady()
             guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
                 return false
             }
@@ -210,6 +257,7 @@ final class Dictation {
             throw DictationError(message: "Speech recognition isn't available right now. Try again in a moment.")
         }
         self.recognizer = recognizer
+        isUsingOlderRecognizer = true
         let box = RequestBox()
         requestBox = box
         sinkFactory = { _ in { buffer in box.append(buffer) } }
