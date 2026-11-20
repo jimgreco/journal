@@ -127,9 +127,23 @@ struct EntryRow: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            Text(entry.text)
-                .lineLimit(4)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if !entry.text.isEmpty {
+                Text(entry.text)
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if !entry.photos.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(entry.photos.prefix(4), id: \.self) { id in
+                        PhotoView(id: id, maxPixels: 180)
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    if entry.photos.count > 4 {
+                        Text("+\(entry.photos.count - 4)").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
             if !entry.tags.isEmpty {
                 Text(entry.tags.map { "#\($0)" }.joined(separator: " "))
                     .font(.caption)

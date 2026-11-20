@@ -7,6 +7,11 @@ import pg from "pg";
 //
 // Entry row: { id, userId, entryDate, createdAt, updatedAt, source, private,
 //              keyId, nonce, ciphertext, deletedAt, revision }
+// putEntry also takes photoIds: the photos the entry keeps. When the write is
+// applied, the entry's other photos are deleted; deleting an entry deletes
+// all of its photos.
+//
+// Photo row: { id, userId, entryId, keyId, nonce, ciphertext }
 
 export class ConflictError extends Error {}
 
@@ -20,6 +25,7 @@ export class MemoryStore {
     this.identities = new Map(); // "provider:subject" -> userId
     this.sessions = new Map();
     this.entries = new Map();
+    this.photos = new Map();
     this.revision = 0;
   }
 
@@ -71,13 +77,15 @@ export class MemoryStore {
     const existing = this.entries.get(row.id);
     if (existing && existing.userId !== row.userId) throw new ConflictError("entry id belongs to another user");
     if (existing && (existing.deletedAt || !newer(row, existing))) return { ...existing };
+    const { photoIds = [], ...fields } = row;
     const stored = {
-      ...row,
+      ...fields,
       createdAt: existing?.createdAt ?? row.createdAt,
       deletedAt: null,
       revision: ++this.revision
     };
     this.entries.set(row.id, stored);
+    this.#prunePhotos(row.userId, row.id, photoIds);
     return { ...stored };
   }
 
@@ -100,7 +108,26 @@ export class MemoryStore {
       revision: ++this.revision
     };
     this.entries.set(id, tombstone);
+    this.#prunePhotos(userId, id, []);
     return { ...tombstone };
+  }
+
+  #prunePhotos(userId, entryId, keep) {
+    for (const [id, p] of this.photos) {
+      if (p.userId === userId && p.entryId === entryId && !keep.includes(id)) this.photos.delete(id);
+    }
+  }
+
+  // Photos never change, so a repeated upload (a retry) keeps the first copy.
+  async putPhoto(row) {
+    const existing = this.photos.get(row.id);
+    if (existing && existing.userId !== row.userId) throw new ConflictError("photo id belongs to another user");
+    if (!existing) this.photos.set(row.id, { ...row });
+  }
+
+  async getPhoto(userId, id) {
+    const photo = this.photos.get(id);
+    return photo && photo.userId === userId ? { ...photo } : null;
   }
 
   async listEntriesAfter(userId, after, limit) {
@@ -123,6 +150,7 @@ export class MemoryStore {
     for (const [key, id] of this.identities) if (id === userId) this.identities.delete(key);
     await this.deleteSessionsForUser(userId);
     for (const [id, e] of this.entries) if (e.userId === userId) this.entries.delete(id);
+    for (const [id, p] of this.photos) if (p.userId === userId) this.photos.delete(id);
   }
 
   async health() {
@@ -269,6 +297,10 @@ export class PostgresStore {
         [row.id, row.userId, row.entryDate, row.createdAt, row.updatedAt, row.source, row.private,
           row.keyId, row.nonce, row.ciphertext]
       );
+      await client.query(
+        "DELETE FROM journal_photos WHERE user_id = $1 AND entry_id = $2 AND NOT (id = ANY($3::uuid[]))",
+        [row.userId, row.id, row.photoIds ?? []]
+      );
       await client.query("COMMIT");
       return entryFromRow(rows[0]);
     } catch (error) {
@@ -300,6 +332,7 @@ export class PostgresStore {
          RETURNING *`,
         [id, userId, deletedAt]
       );
+      await client.query("DELETE FROM journal_photos WHERE user_id = $1 AND entry_id = $2", [userId, id]);
       await client.query("COMMIT");
       return entryFromRow(rows[0]);
     } catch (error) {
@@ -308,6 +341,25 @@ export class PostgresStore {
     } finally {
       client.release();
     }
+  }
+
+  async putPhoto(row) {
+    await this.pool.query(
+      `INSERT INTO journal_photos (id, user_id, entry_id, key_id, nonce, ciphertext)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+      [row.id, row.userId, row.entryId, row.keyId, row.nonce, row.ciphertext]
+    );
+    const { rows } = await this.pool.query("SELECT user_id FROM journal_photos WHERE id = $1", [row.id]);
+    if (rows[0]?.user_id !== row.userId) throw new ConflictError("photo id belongs to another user");
+  }
+
+  async getPhoto(userId, id) {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM journal_photos WHERE id = $1 AND user_id = $2",
+      [id, userId]
+    );
+    const r = rows[0];
+    return r ? { id: r.id, userId: r.user_id, entryId: r.entry_id, keyId: r.key_id, nonce: r.nonce, ciphertext: r.ciphertext } : null;
   }
 
   async listEntriesAfter(userId, after, limit) {

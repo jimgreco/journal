@@ -1,4 +1,5 @@
 import HealthKit
+import UIKit
 import XCTest
 @testable import Journal
 
@@ -12,6 +13,8 @@ final class FakeRemote: EntryRemote {
 
     func put(_ entry: Entry) async throws -> Entry {
         if offline { throw APIError.offline }
+        if entry.photos.contains(where: { photos[$0] == nil }) { throw APIError.server(400, "missing photo") }
+        uploadOrder.append("entry")
         puts += 1
         onPut?()
         if let existing = server[entry.id], existing.deleted { return existing }
@@ -38,6 +41,21 @@ final class FakeRemote: EntryRemote {
         if offline { throw APIError.offline }
         let entries = server.values.filter { ($0.revision ?? 0) > after }.sorted { ($0.revision ?? 0) < ($1.revision ?? 0) }
         return ChangesPage(entries: entries, revision: entries.last?.revision ?? after, more: false)
+    }
+
+    var photos: [UUID: Data] = [:]
+    var uploadOrder: [String] = []
+
+    func uploadPhoto(_ id: UUID, entryId: UUID, data: Data) async throws {
+        if offline { throw APIError.offline }
+        uploadOrder.append("photo")
+        photos[id] = data
+    }
+
+    func downloadPhoto(_ id: UUID) async throws -> Data {
+        if offline { throw APIError.offline }
+        guard let data = photos[id] else { throw APIError.server(404, nil) }
+        return data
     }
 }
 
@@ -152,6 +170,72 @@ final class EntryStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }
 
+    func testPhotosUploadBeforeTheirEntryAndAreKeptOnDevice() async throws {
+        let store = EntryStore(fileURL: fileURL)
+        let remote = FakeRemote()
+        let photo = UUID()
+        var e = entry("")
+        e.photos = [photo]
+        XCTAssertTrue(store.save(e, newPhotos: [photo: Data([0xFF, 0xD8, 0xFF, 1])]))
+        XCTAssertTrue(store.photoFiles.contains(photo))
+        XCTAssertEqual(store.state.photoUploads[photo], e.id)
+
+        await store.sync(with: remote)
+        XCTAssertNil(store.syncError)
+        XCTAssertEqual(remote.uploadOrder, ["photo", "entry"])
+        XCTAssertTrue(store.state.photoUploads.isEmpty)
+        XCTAssertEqual(remote.server[e.id]?.photos, [photo])
+
+        let reloaded = EntryStore(fileURL: fileURL)
+        XCTAssertEqual(reloaded.visibleEntries.first?.photos, [photo])
+        reloaded.reset()
+    }
+
+    func testRemovingAPhotoOrTheEntryDeletesTheLocalFile() {
+        let store = EntryStore(fileURL: fileURL)
+        let keep = UUID(), drop = UUID()
+        var e = entry("two photos")
+        e.photos = [keep, drop]
+        store.save(e, newPhotos: [keep: Data([1]), drop: Data([2])])
+        e.photos = [keep]
+        store.save(e)
+        XCTAssertTrue(store.photoFiles.contains(keep))
+        XCTAssertFalse(store.photoFiles.contains(drop))
+        XCTAssertNil(store.state.photoUploads[drop])
+        store.delete(e.id)
+        XCTAssertFalse(store.photoFiles.contains(keep))
+        XCTAssertTrue(store.state.photoUploads.isEmpty)
+        store.reset()
+    }
+
+    func testPhotoFromAnotherDeviceIsDownloadedOnceAndKept() async {
+        let store = EntryStore(fileURL: fileURL)
+        let remote = FakeRemote()
+        let photo = UUID()
+        remote.photos[photo] = Data([9, 9])
+        var e = entry("")
+        e.photos = [photo]
+        _ = try? await remote.put(e)
+        await store.sync(with: remote)
+        XCTAssertFalse(store.photoFiles.contains(photo), "photos download when shown, not on sync")
+        let data = await store.photoData(photo, remote: remote)
+        XCTAssertEqual(data, Data([9, 9]))
+        XCTAssertTrue(store.photoFiles.contains(photo))
+        remote.photos[photo] = nil
+        let again = await store.photoData(photo, remote: remote)
+        XCTAssertEqual(again, Data([9, 9]), "served from this iPhone the second time")
+        store.reset()
+        XCTAssertFalse(store.photoFiles.contains(photo))
+    }
+
+    func testOlderStateFileWithoutPhotosStillLoads() throws {
+        let json = #"{"entries":[],"pending":[],"revision":7}"#
+        try Data(json.utf8).write(to: fileURL)
+        let store = EntryStore(fileURL: fileURL)
+        XCTAssertEqual(store.state.revision, 7)
+        XCTAssertTrue(store.state.photoUploads.isEmpty)
+    }
+
     func testDaysGroupingAndSearch() {
         let store = EntryStore(fileURL: fileURL)
         store.save(entry("morning run felt great", day: "2026-11-10"))
@@ -179,6 +263,24 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(json["createdAt"] as? String, "1970-01-01T00:00:00.000Z")
         XCTAssertTrue(json["mood"] is NSNull, "mood is sent as an explicit null")
         XCTAssertNil(json["deleted"])
+        XCTAssertEqual(json["photos"] as? [String], [])
+        var withPhoto = e
+        let id = UUID()
+        withPhoto.photos = [id]
+        let photoJSON = try JSONSerialization.jsonObject(with: JSONCoding.encoder.encode(withPhoto.uploadBody)) as! [String: Any]
+        XCTAssertEqual(photoJSON["photos"] as? [String], [id.uuidString.lowercased()])
+    }
+
+    func testPhotoProcessingShrinksAndReencodes() throws {
+        let big = UIGraphicsImageRenderer(size: CGSize(width: 4000, height: 3000),
+                                          format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }())
+            .image { ctx in UIColor.systemTeal.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 4000, height: 3000)) }
+        let data = try XCTUnwrap(PhotoProcessing.jpeg(from: big))
+        XCTAssertEqual(Array(data.prefix(3)), [0xFF, 0xD8, 0xFF])
+        let decoded = try XCTUnwrap(UIImage(data: data))
+        XCTAssertEqual(decoded.size.width, 2048)
+        XCTAssertEqual(decoded.size.height, 1536)
+        XCTAssertLessThanOrEqual(data.count, PhotoProcessing.maxBytes)
     }
 
     func testDecodesServerEntry() throws {

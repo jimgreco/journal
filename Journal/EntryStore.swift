@@ -13,6 +13,8 @@ protocol EntryRemote {
     func put(_ entry: Entry) async throws -> Entry
     func delete(_ id: UUID) async throws -> Entry
     func changes(after revision: Int) async throws -> ChangesPage
+    func uploadPhoto(_ id: UUID, entryId: UUID, data: Data) async throws
+    func downloadPhoto(_ id: UUID) async throws -> Data
 }
 
 @MainActor
@@ -30,12 +32,22 @@ struct SessionRemote: EntryRemote {
     func changes(after revision: Int) async throws -> ChangesPage {
         try await session.request("GET", "/api/entries?after=\(revision)")
     }
+
+    func uploadPhoto(_ id: UUID, entryId: UUID, data: Data) async throws {
+        let path = "/api/photos/\(id.uuidString.lowercased())?entry=\(entryId.uuidString.lowercased())"
+        _ = try await session.upload("PUT", path, data: data, contentType: "image/jpeg")
+    }
+
+    func downloadPhoto(_ id: UUID) async throws -> Data {
+        try await session.data("/api/photos/\(id.uuidString.lowercased())")
+    }
 }
 
 /// Entries on this iPhone, plus an outbox of changes not yet on the server.
 ///
 /// The file is written with complete file protection (unreadable while the
-/// phone is locked) and excluded from iCloud/iTunes backups.
+/// phone is locked) and excluded from iCloud/iTunes backups. Photos sit next
+/// to it in `PhotoFiles`, with the same protection.
 @MainActor
 @Observable
 final class EntryStore {
@@ -43,6 +55,18 @@ final class EntryStore {
         var entries: [UUID: Entry] = [:]
         var pending: [UUID: Pending] = [:]
         var revision = 0
+        /// Photos taken or picked here and not yet uploaded: photo id -> entry id.
+        var photoUploads: [UUID: UUID] = [:]
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            entries = try c.decode([UUID: Entry].self, forKey: .entries)
+            pending = try c.decode([UUID: Pending].self, forKey: .pending)
+            revision = try c.decode(Int.self, forKey: .revision)
+            photoUploads = try c.decodeIfPresent([UUID: UUID].self, forKey: .photoUploads) ?? [:]
+        }
     }
 
     enum Pending: Codable, Equatable {
@@ -55,13 +79,17 @@ final class EntryStore {
     var syncError: String?
 
     private let fileURL: URL
+    let photoFiles: PhotoFiles
     private var syncAgain = false
+    private var downloads: [UUID: Task<Data?, Never>] = [:]
 
     /// Called after every local save or delete (Apple Health mirroring).
     var onLocalChange: ((Entry) -> Void)?
 
     init(fileURL: URL = EntryStore.defaultFileURL) {
         self.fileURL = fileURL
+        photoFiles = PhotoFiles(directory: fileURL.deletingLastPathComponent()
+            .appendingPathComponent(fileURL.deletingPathExtension().lastPathComponent + "-photos", isDirectory: true))
         load()
     }
 
@@ -97,33 +125,81 @@ final class EntryStore {
 
     // MARK: Writing
 
-    func save(_ entry: Entry, now: Date = Date()) {
+    /// Saves an entry. `newPhotos` holds the JPEG for each photo id in
+    /// `entry.photos` that was added in this edit.
+    @discardableResult
+    func save(_ entry: Entry, newPhotos: [UUID: Data] = [:], now: Date = Date()) -> Bool {
         var entry = entry
         entry.text = String(entry.text.prefix(Entry.maxTextLength))
+        entry.photos = Array(entry.photos.prefix(Entry.maxPhotos))
         entry.updatedAt = now
         entry.deleted = false
+        do {
+            for id in entry.photos {
+                guard let data = newPhotos[id] else { continue }
+                try photoFiles.write(data, for: id)
+                state.photoUploads[id] = entry.id
+            }
+        } catch {
+            syncError = "Couldn't save the photo on this iPhone: \(error.localizedDescription)"
+            return false
+        }
+        forgetPhotos(of: state.entries[entry.id], keeping: entry.photos)
         state.entries[entry.id] = entry
         state.pending[entry.id] = .upsert(now)
         persist()
         onLocalChange?(entry)
+        return true
     }
 
     func delete(_ id: UUID) {
         guard var entry = state.entries[id] else { return }
+        forgetPhotos(of: entry, keeping: [])
         entry.deleted = true
         entry.text = ""
         entry.tags = []
         entry.mood = nil
+        entry.photos = []
         state.entries[id] = entry
         state.pending[id] = .delete
         persist()
         onLocalChange?(entry)
     }
 
+    /// Removes this iPhone's copies of an entry's photos that are no longer attached.
+    private func forgetPhotos(of entry: Entry?, keeping kept: [UUID]) {
+        for id in entry?.photos ?? [] where !kept.contains(id) {
+            photoFiles.remove(id)
+            state.photoUploads[id] = nil
+        }
+    }
+
     /// Wipes everything on this device (sign out, account deletion).
     func reset() {
         state = State()
         try? FileManager.default.removeItem(at: fileURL)
+        photoFiles.removeAll()
+        PhotoCache.removeAll()
+    }
+
+    // MARK: Photos
+
+    /// A photo's JPEG: from this iPhone, or downloaded from the server and kept here.
+    func photoData(_ id: UUID, remote: EntryRemote) async -> Data? {
+        if let data = photoFiles.data(for: id) { return data }
+        if let running = downloads[id] { return await running.value }
+        let files = photoFiles
+        let task = Task<Data?, Never> { @MainActor in
+            defer { self.downloads[id] = nil }
+            guard let data = try? await remote.downloadPhoto(id) else { return nil }
+            // Keep it only while an entry still shows it.
+            if self.state.entries.values.contains(where: { $0.photos.contains(id) }) {
+                try? files.write(data, for: id)
+            }
+            return data
+        }
+        downloads[id] = task
+        return await task.value
     }
 
     // MARK: Sync
@@ -159,11 +235,20 @@ final class EntryStore {
                     state.pending[id] = nil
                     continue
                 }
+                // Photos go up first, so the entry never lists a photo the server lacks.
+                for photo in entry.photos where state.photoUploads[photo] != nil {
+                    if let data = photoFiles.data(for: photo) {
+                        try await remote.uploadPhoto(photo, entryId: id, data: data)
+                    }
+                    state.photoUploads[photo] = nil
+                    persist()
+                }
                 let stored = try await remote.put(entry)
                 // Only clear the outbox if nothing changed locally while the request was in flight.
                 if state.pending[id] == .upsert(stamp) {
                     state.pending[id] = nil
                     if stored.deleted {
+                        forgetPhotos(of: state.entries[id], keeping: [])
                         state.entries[id] = stored // deleted elsewhere: deletion wins
                     } else {
                         state.entries[id]?.revision = stored.revision
@@ -185,6 +270,7 @@ final class EntryStore {
         while more {
             let page = try await remote.changes(after: state.revision)
             for incoming in page.entries where state.pending[incoming.id] == nil {
+                forgetPhotos(of: state.entries[incoming.id], keeping: incoming.deleted ? [] : incoming.photos)
                 state.entries[incoming.id] = incoming.deleted ? nil : incoming
             }
             state.revision = max(state.revision, page.revision)

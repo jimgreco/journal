@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct ComposeView: View {
@@ -20,6 +21,14 @@ struct ComposeView: View {
     @State private var textBeforeDictation = ""
     @State private var confirmDiscard = false
     @State private var resumeDictation = false
+    @State private var photos: [UUID]
+    @State private var newPhotos: [UUID: Data] = [:]
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showLibrary = false
+    @State private var showCamera = false
+    @State private var addingPhotos = 0
+    @State private var photoError: String?
+    @State private var viewing: PhotoRef?
     @FocusState private var editorFocused: Bool
 
     init(entry: Entry?, startRecording: Bool, onSave: @escaping () -> Void) {
@@ -32,13 +41,18 @@ struct ComposeView: View {
         _tagsText = State(initialValue: entry?.tags.joined(separator: ", ") ?? "")
         _isPrivate = State(initialValue: entry?.isPrivate ?? false)
         _usedVoice = State(initialValue: entry?.source == .voice)
+        _photos = State(initialValue: entry?.photos ?? [])
     }
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var hasChanges: Bool {
-        guard let original else { return !trimmed.isEmpty }
+        guard let original else { return !trimmed.isEmpty || !photos.isEmpty }
         return text != original.text || mood != original.mood || Tags.parse(tagsText) != original.tags
             || isPrivate != original.isPrivate || DayKey.key(for: day) != original.entryDate
+            || photos != original.photos
+    }
+    private var canSave: Bool {
+        (!trimmed.isEmpty || !photos.isEmpty) && !dictation.isBusy && addingPhotos == 0
     }
 
     var body: some View {
@@ -59,6 +73,8 @@ struct ComposeView: View {
                     }
                     dictationControls
                 }
+
+                photoSection
 
                 Section {
                     DatePicker("Day", selection: $day, in: ...Date(), displayedComponents: .date)
@@ -97,13 +113,28 @@ struct ComposeView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).disabled(trimmed.isEmpty || dictation.isBusy)
+                    Button("Save", action: save).disabled(!canSave)
                 }
             }
             .confirmationDialog("Discard this entry?", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("Discard", role: .destructive) { close() }
             }
             .interactiveDismissDisabled(hasChanges || dictation.isBusy)
+            .photosPicker(isPresented: $showLibrary, selection: $pickerItems,
+                          maxSelectionCount: max(Entry.maxPhotos - photos.count, 1),
+                          selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .compatible)
+            .onChange(of: pickerItems) { _, items in
+                guard !items.isEmpty else { return }
+                pickerItems = []
+                Task { await addPicked(items) }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraPicker { image in Task { await addCaptured(image) } }
+                    .ignoresSafeArea()
+            }
+            .fullScreenCover(item: $viewing) { ref in
+                PhotoViewer(id: ref.id, unsaved: newPhotos[ref.id])
+            }
             .onChange(of: dictation.transcript) { _, transcript in
                 guard !transcript.isEmpty else { return }
                 let separator = textBeforeDictation.isEmpty || textBeforeDictation.hasSuffix("\n") ? "" : " "
@@ -155,6 +186,95 @@ struct ComposeView: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
+    }
+
+    @ViewBuilder private var photoSection: some View {
+        Section {
+            if !photos.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(photos, id: \.self) { id in
+                            PhotoView(id: id, unsaved: newPhotos[id])
+                                .frame(width: 96, height: 96)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .onTapGesture { viewing = PhotoRef(id: id) }
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        withAnimation { removePhoto(id) }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, .black.opacity(0.6))
+                                            .font(.title3)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .padding(4)
+                                    .accessibilityLabel("Remove photo")
+                                }
+                        }
+                        if addingPhotos > 0 {
+                            ProgressView().frame(width: 96, height: 96)
+                        }
+                    }
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+            } else if addingPhotos > 0 {
+                ProgressView()
+            }
+            if photos.count < Entry.maxPhotos {
+                Menu {
+                    Button("Choose from Library", systemImage: "photo.on.rectangle") { showLibrary = true }
+                    if CameraPicker.isAvailable {
+                        Button("Take Photo", systemImage: "camera") { showCamera = true }
+                    }
+                } label: {
+                    Label("Add Photo", systemImage: "photo.badge.plus")
+                }
+            }
+            if let photoError {
+                Text(photoError).font(.footnote).foregroundStyle(.orange)
+            }
+        } footer: {
+            Text("Photos are encrypted and kept with this entry. They aren't part of your weekly review.")
+        }
+    }
+
+    private func addPicked(_ items: [PhotosPickerItem]) async {
+        addingPhotos += items.count
+        for item in items {
+            defer { addingPhotos -= 1 }
+            guard photos.count < Entry.maxPhotos else { continue }
+            guard let raw = try? await item.loadTransferable(type: Data.self) else {
+                photoError = "Couldn't load one of the photos."
+                continue
+            }
+            let jpeg = await Task.detached(priority: .userInitiated) { PhotoProcessing.jpeg(from: raw) }.value
+            append(jpeg)
+        }
+    }
+
+    private func addCaptured(_ image: UIImage) async {
+        addingPhotos += 1
+        defer { addingPhotos -= 1 }
+        let jpeg = await Task.detached(priority: .userInitiated) { PhotoProcessing.jpeg(from: image) }.value
+        append(jpeg)
+    }
+
+    private func append(_ jpeg: Data?) {
+        guard let jpeg else {
+            photoError = "Couldn't read that photo."
+            return
+        }
+        guard photos.count < Entry.maxPhotos else { return }
+        let id = UUID()
+        newPhotos[id] = jpeg
+        photos.append(id)
+        photoError = nil
+    }
+
+    private func removePhoto(_ id: UUID) {
+        photos.removeAll { $0 == id }
+        newPhotos[id] = nil
     }
 
     @ViewBuilder private var dictationControls: some View {
@@ -238,9 +358,13 @@ struct ComposeView: View {
             text: trimmed,
             mood: mood,
             tags: Tags.parse(tagsText),
+            photos: photos,
             revision: original?.revision
         )
-        store.save(entry, now: now)
+        guard store.save(entry, newPhotos: newPhotos, now: now) else {
+            photoError = store.syncError
+            return
+        }
         onSave()
         dismiss()
     }
