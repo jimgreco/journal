@@ -86,6 +86,11 @@ struct EntryListView: View {
                 ComposeView(entry: entry, startRecording: false) { syncSoon() }
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
+            // Fetch the better speech model before the first voice entry needs it.
+            .task {
+                SpeechModel.shared.prepare()
+                WhisperModel.shared.prepare()
+            }
             .onChange(of: CaptureRequest.shared.pending, initial: true) { _, _ in openPendingCapture() }
             .onChange(of: lock.isLocked) { _, _ in openPendingCapture() }
         }

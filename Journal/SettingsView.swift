@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var confirmDelete = false
     @State private var message: String?
     @State private var reminder = Reminder.shared
+    @State private var whisper = WhisperModel.shared
 
     var body: some View {
         NavigationStack {
@@ -51,6 +52,24 @@ struct SettingsView: View {
                     } footer: {
                         Text("Moods appear in Health as State of Mind. Only the mood is shared, never what you wrote, and private entries are left out.")
                     }
+                }
+
+                Section {
+                    Toggle("Whisper transcription", isOn: Binding(
+                        get: { whisper.isOn },
+                        set: { whisper.setOn($0) }
+                    ))
+                    if whisper.isOn {
+                        LabeledContent("Model", value: whisperStatus)
+                        if whisperNeedsTap {
+                            Button("Download and load now") { whisper.prepare(userInitiated: true) }
+                        }
+                    }
+                } header: {
+                    Text("Voice")
+                } footer: {
+                    Text("When you tap Stop, Whisper transcribes the entry again on this iPhone and replaces the live text. "
+                         + "The model is a one-time download of about 630 MB, fetched on Wi-Fi. Audio is never saved or uploaded.")
                 }
 
                 Section {
@@ -119,6 +138,24 @@ struct SettingsView: View {
                 Text("Every entry is removed from the server and this iPhone. This can't be undone.")
             }
             .onDisappear { removeExport() }
+        }
+    }
+
+    private var whisperStatus: String {
+        switch whisper.state {
+        case .off: "Off"
+        case .notDownloaded: "Waiting for Wi-Fi"
+        case .downloading(let fraction): "Downloading \(Int(fraction * 100))%"
+        case .loading: "Getting ready (a few minutes the first time)"
+        case .ready: "Ready"
+        case .failed(let reason): reason
+        }
+    }
+
+    private var whisperNeedsTap: Bool {
+        switch whisper.state {
+        case .notDownloaded, .failed: true
+        default: false
         }
     }
 

@@ -30,7 +30,7 @@ Sunday weekly review unless they are marked private.
 |---|---|---|
 | iPhone | entries and an outbox of unsynced changes | complete file protection (unreadable while locked), excluded from backups, Face ID / passcode lock, app-switcher cover |
 | iPhone | session tokens | Keychain, this device only, while unlocked |
-| Microphone audio | nothing | streamed into Apple's on-device speech model (`SpeechTranscriber`, or the older recognizer with `requiresOnDeviceRecognition` until that model has downloaded); never written or uploaded |
+| Microphone audio | nothing | streamed into Apple's on-device speech model for the live text, and held in memory until Stop so Whisper (WhisperKit, also on the device) can transcribe the take again; never written or uploaded. The Whisper model itself is a one-time download from Hugging Face. |
 | Server database | ciphertext of text, mood and tags; date, source, private flag | AES-256-GCM, key only in the app's runtime env, bound to user and entry id. Backups hold ciphertext only. |
 | Weekly review | non-private entries of one week, plus counts | its own token (SHA-256 stored), read-only, private entries counted but never decrypted |
 

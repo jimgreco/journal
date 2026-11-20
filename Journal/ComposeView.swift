@@ -173,10 +173,14 @@ struct ComposeView: View {
                     .accessibilityLabel("Listening")
             } else if dictation.isPreparing || dictation.isFinishing {
                 ProgressView()
-                Text(dictation.isPreparing ? "Getting ready…" : "Finishing your last words…")
+                Text(dictation.isPreparing ? "Getting ready…"
+                     : dictation.isPolishing ? "Whisper is improving the transcript…" : "Finishing your last words…")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if dictation.isPolishing {
+                    Button("Skip") { dictation.skipPolish() }
+                }
             } else {
                 Button {
                     Task { await beginDictation() }
@@ -184,12 +188,33 @@ struct ComposeView: View {
                     Label(text.isEmpty ? "Speak" : "Keep talking", systemImage: "mic.fill")
                 }
                 Spacer()
-                Text("Transcribed on this iPhone").font(.caption2).foregroundStyle(.secondary)
+                Text(speechModelNote).font(.caption2).foregroundStyle(.secondary)
             }
         }
         .buttonStyle(.borderless)
+        if dictation.isRecording, dictation.isUsingOlderRecognizer {
+            Text("Using the basic speech model for this entry. The better one isn't ready yet.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
         if let error = dictation.error {
             Text(error).font(.footnote).foregroundStyle(.orange)
+        }
+    }
+
+    private var speechModelNote: String {
+        switch WhisperModel.shared.state {
+        case .ready: return "Whisper · on this iPhone"
+        case .downloading(let fraction): return "Whisper downloading \(Int(fraction * 100))%"
+        case .loading: return "Whisper getting ready…"
+        case .off, .notDownloaded, .failed: break
+        }
+        return switch SpeechModel.shared.state {
+        case .downloading: "Better speech model downloading…"
+        case .failed: "Better speech model not downloaded yet"
+        case .unsupported: "Basic speech model · on this iPhone"
+        case .ready: "Better speech model · on this iPhone"
+        case .unknown: "Transcribed on this iPhone"
         }
     }
 

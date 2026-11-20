@@ -3,6 +3,59 @@ import Foundation
 import Observation
 import Speech
 
+/// Whether the newer on-device speech model is on this iPhone yet.
+///
+/// The model is a system download. Fetching it as soon as the journal opens,
+/// rather than on the first dictation, means voice entries rarely have to
+/// fall back to the older, weaker recognizer.
+@MainActor
+@Observable
+final class SpeechModel {
+    static let shared = SpeechModel()
+
+    enum State {
+        case unknown, unsupported, downloading, ready, failed
+    }
+
+    private(set) var state: State = .unknown
+    private var task: Task<Void, Never>?
+
+    func prepare() {
+        guard task == nil, state != .ready, state != .unsupported else { return }
+        task = Task {
+            defer { task = nil }
+            guard SpeechTranscriber.isAvailable, let locale = await Self.locale() else {
+                state = .unsupported
+                return
+            }
+            do {
+                let transcriber = Self.transcriber(for: locale)
+                if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                    state = .downloading
+                    try await request.downloadAndInstall()
+                }
+                state = .ready
+            } catch {
+                state = .failed
+            }
+        }
+    }
+
+    func markReady() {
+        state = .ready
+    }
+
+    static func locale() async -> Locale? {
+        if let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale.current) { return locale }
+        return await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en-US"))
+    }
+
+    static func transcriber(for locale: Locale) -> SpeechTranscriber {
+        SpeechTranscriber(locale: locale, transcriptionOptions: [],
+                          reportingOptions: [.volatileResults], attributeOptions: [])
+    }
+}
+
 /// Live speech-to-text that runs only on the iPhone.
 ///
 /// Uses the iOS 26 `SpeechTranscriber` model, which runs entirely on the
@@ -19,10 +72,15 @@ final class Dictation {
     private(set) var isPreparing = false
     /// After Stop, while the last words are still being transcribed.
     private(set) var isFinishing = false
+    /// Part of finishing: Whisper is rewriting the take.
+    private(set) var isPolishing = false
     private(set) var transcript = ""
     private var segments = TranscriptSegments()
     private(set) var level: Float = 0
     var error: String?
+    /// True when this take is using the older recognizer because the newer
+    /// model isn't available yet.
+    private(set) var isUsingOlderRecognizer = false
 
     var isBusy: Bool { isRecording || isPreparing || isFinishing }
 
@@ -34,12 +92,14 @@ final class Dictation {
     /// format, to whichever recognizer is running.
     private var sinkFactory: ((AVAudioFormat) -> ((AVAudioPCMBuffer) -> Void)?)?
     private var observers: [NSObjectProtocol] = []
+    /// This take's audio, in memory, for Whisper. Nil when Whisper is off.
+    private var collector: SampleCollector?
+    private var polish: Task<String?, Never>?
 
     // SpeechTranscriber
     private var analyzer: SpeechAnalyzer?
     private var analyzerInput: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
-    private var modelDownload: Task<Void, Never>?
 
     // Older recognizer
     private var recognizer: SFSpeechRecognizer?
@@ -57,6 +117,8 @@ final class Dictation {
         transcript = ""
         segments = TranscriptSegments()
         emptyRestarts = 0
+        isUsingOlderRecognizer = false
+        collector = WhisperModel.shared.isOn ? SampleCollector() : nil
         session += 1
         let current = session
         isPreparing = true
@@ -120,16 +182,45 @@ final class Dictation {
                 }
                 await finishing.value
                 timeout.cancel()
-                if self.session == current { self.tearDown() }
+                await self.complete(session: current)
             }
         } else {
             // The recognizer's final result ends the session; this is the backstop.
             requestBox?.endAudio()
             Task {
                 try? await Task.sleep(for: .seconds(5))
-                if self.session == current { self.tearDown() }
+                await self.complete(session: current)
             }
         }
+    }
+
+    /// Stop waiting for Whisper and keep the live transcript.
+    func skipPolish() {
+        guard isPolishing else { return }
+        polish?.cancel()
+        tearDown()
+    }
+
+    /// The live transcript is final. If Whisper is loaded, have it transcribe
+    /// the whole take again and use that instead, then end the session.
+    private func complete(session current: Int) async {
+        guard session == current, isFinishing, !isPolishing else { return }
+        let samples = collector?.drain() ?? []
+        if WhisperModel.shared.isReady, !samples.isEmpty {
+            isPolishing = true
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            let work = Task { await WhisperModel.shared.transcribe(samples) }
+            polish = work
+            let better = await work.value
+            // Skipped, or a new take has started.
+            guard session == current else { return }
+            if let better {
+                segments = TranscriptSegments()
+                segments.set(better, isFinal: true)
+                transcript = segments.text
+            }
+        }
+        tearDown()
     }
 
     // MARK: - SpeechTranscriber
@@ -138,26 +229,17 @@ final class Dictation {
     /// caller falls back to the older recognizer.
     private func startAnalyzer(session current: Int) async -> Bool {
         guard SpeechTranscriber.isAvailable else { return false }
-        var locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale.current)
-        if locale == nil {
-            locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en-US"))
-        }
-        guard let locale else { return false }
+        guard let locale = await SpeechModel.locale() else { return false }
 
         do {
-            let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [],
-                                                reportingOptions: [.volatileResults], attributeOptions: [])
-            if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-                // The model isn't on this iPhone yet. Fetch it in the
-                // background for next time instead of making this entry wait.
-                if modelDownload == nil {
-                    modelDownload = Task { [weak self] in
-                        _ = try? await request.downloadAndInstall()
-                        self?.modelDownload = nil
-                    }
-                }
+            let transcriber = SpeechModel.transcriber(for: locale)
+            if try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) != nil {
+                // The model isn't on this iPhone yet. Keep fetching it in the
+                // background instead of making this entry wait.
+                SpeechModel.shared.prepare()
                 return false
             }
+            SpeechModel.shared.markReady()
             guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
                 return false
             }
@@ -210,6 +292,7 @@ final class Dictation {
             throw DictationError(message: "Speech recognition isn't available right now. Try again in a moment.")
         }
         self.recognizer = recognizer
+        isUsingOlderRecognizer = true
         let box = RequestBox()
         requestBox = box
         sinkFactory = { _ in { buffer in box.append(buffer) } }
@@ -244,7 +327,7 @@ final class Dictation {
                 if self.isRecording {
                     self.recoverRecognition(session: current)
                 } else {
-                    self.tearDown()
+                    await self.complete(session: current)
                 }
             }
         }
@@ -272,9 +355,17 @@ final class Dictation {
         guard format.sampleRate > 0, format.channelCount > 0, let sink = sinkFactory?(format) else {
             throw DictationError(message: "The microphone isn't available right now. Try again in a moment.")
         }
+        // A second copy of the audio, resampled for Whisper, when it's on.
+        let collector = self.collector
+        let whisperFormat = collector == nil ? nil : WhisperModel.audioFormat
+        let whisperConverter = whisperFormat.flatMap { AVAudioConverter(from: format, to: $0) }
         node.removeTap(onBus: 0)
         node.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             sink(buffer)
+            if let collector, let whisperConverter, let whisperFormat,
+               let resampled = Self.convert(buffer, with: whisperConverter, to: whisperFormat) {
+                collector.append(resampled)
+            }
             let level = Self.rms(buffer)
             Task { @MainActor in self?.level = level }
         }
@@ -349,8 +440,11 @@ final class Dictation {
         task = nil
         recognizer = nil
 
+        polish = nil
+        collector = nil
         isRecording = false
         isFinishing = false
+        isPolishing = false
         level = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
