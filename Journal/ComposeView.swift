@@ -131,6 +131,9 @@ struct ComposeView: View {
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPicker { image in Task { await addCaptured(image) } }
                     .ignoresSafeArea()
+                    // The menu hands focus back to the text field as it closes,
+                    // which would put the keyboard over the viewfinder.
+                    .onAppear(perform: hideKeyboard)
             }
             .fullScreenCover(item: $viewing) { ref in
                 PhotoViewer(id: ref.id, unsaved: newPhotos[ref.id])
@@ -223,9 +226,15 @@ struct ComposeView: View {
             }
             if photos.count < Entry.maxPhotos {
                 Menu {
-                    Button("Choose from Library", systemImage: "photo.on.rectangle") { showLibrary = true }
+                    Button("Choose from Library", systemImage: "photo.on.rectangle") {
+                        hideKeyboard()
+                        showLibrary = true
+                    }
                     if CameraPicker.isAvailable {
-                        Button("Take Photo", systemImage: "camera") { showCamera = true }
+                        Button("Take Photo", systemImage: "camera") {
+                            hideKeyboard()
+                            showCamera = true
+                        }
                     }
                 } label: {
                     Label("Add Photo", systemImage: "photo.badge.plus")
@@ -237,6 +246,12 @@ struct ComposeView: View {
         } footer: {
             Text("Photos are encrypted and kept with this entry. They aren't part of your weekly review.")
         }
+    }
+
+    /// Puts the keyboard away whichever field has it (the editor or tags).
+    private func hideKeyboard() {
+        editorFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private func addPicked(_ items: [PhotosPickerItem]) async {
