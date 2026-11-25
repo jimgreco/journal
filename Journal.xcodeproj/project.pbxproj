@@ -25,6 +25,7 @@
 		A89EE8984E4CD1E222D3770E /* EntryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA5ADFD4BC3A700C730CCF79 /* EntryStore.swift */; };
 		A9FE60AA5D8D9C62DB25B154 /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CC3AD9D327262822487008A /* EntryListView.swift */; };
 		C1D77C5E227F493ADD0D0D53 /* Shield.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6881C0084D2325A909A99C18 /* Shield.swift */; };
+		C6E460FB484F450052001EC7 /* EntryTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C2297E4C69F58FC14E1DC3F /* EntryTextEditor.swift */; };
 		CA8908FE6CBA2077F175EDFC /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38DABD0DACBFEC20A871C13F /* Capture.swift */; };
 		CD101B6474C5DDC6FF75395A /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7262F6399A3E96BEAEF29918 /* Keychain.swift */; };
 		D476FCC53D4C9EAFAA1E81E2 /* Reminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89E5B10D648822F38FC5A556 /* Reminder.swift */; };
@@ -46,6 +47,7 @@
 		0CC3AD9D327262822487008A /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
 		0ECD0FF05B4A08F5DCFDB7BD /* JournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalTests.swift; sourceTree = "<group>"; };
 		248F89450D98F4EDBF34CAF6 /* AppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLock.swift; sourceTree = "<group>"; };
+		2C2297E4C69F58FC14E1DC3F /* EntryTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryTextEditor.swift; sourceTree = "<group>"; };
 		38DABD0DACBFEC20A871C13F /* Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture.swift; sourceTree = "<group>"; };
 		3BA5AD90540C9E7F1D239DBE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		47616C7305638AC933C122DA /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -117,6 +119,7 @@
 				68A8E5CFAF2E38FC83C0EF8D /* Dictation.swift */,
 				0CC3AD9D327262822487008A /* EntryListView.swift */,
 				EA5ADFD4BC3A700C730CCF79 /* EntryStore.swift */,
+				2C2297E4C69F58FC14E1DC3F /* EntryTextEditor.swift */,
 				A2DB5E08CBCABC706F2127F0 /* HealthMood.swift */,
 				80251EF6DF2C6304FDF6EB37 /* Info.plist */,
 				C9A8F967D24A2D56C66AA5A4 /* Journal.entitlements */,
@@ -241,6 +244,7 @@
 				A049B8E962D62E1E28FF8B55 /* Dictation.swift in Sources */,
 				A9FE60AA5D8D9C62DB25B154 /* EntryListView.swift in Sources */,
 				A89EE8984E4CD1E222D3770E /* EntryStore.swift in Sources */,
+				C6E460FB484F450052001EC7 /* EntryTextEditor.swift in Sources */,
 				1810E0799220721D83C808BF /* HealthMood.swift in Sources */,
 				A05F3246AC4DC57E5A23660C /* JournalApp.swift in Sources */,
 				CD101B6474C5DDC6FF75395A /* Keychain.swift in Sources */,

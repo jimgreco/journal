@@ -159,12 +159,26 @@ struct PhotoViewer: View {
     let id: UUID
     var unsaved: Data?
     @Environment(\.dismiss) private var dismiss
+    @Environment(EntryStore.self) private var store
+    @Environment(Session.self) private var session
+    @State private var copied = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
             PhotoView(id: id, maxPixels: nil, contentMode: .fit, unsaved: unsaved)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    Button(action: copy) {
+                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(.white.opacity(0.25), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                    .padding()
+                }
             Button {
                 dismiss()
             } label: {
@@ -178,6 +192,21 @@ struct PhotoViewer: View {
         }
         .onTapGesture { dismiss() }
         .gesture(DragGesture().onEnded { if $0.translation.height > 80 { dismiss() } })
+    }
+}
+
+extension PhotoViewer {
+    private func copy() {
+        Task {
+            let found: Data? = if let unsaved { unsaved } else {
+                await store.photoData(id, remote: SessionRemote(session: session))
+            }
+            guard let found else { return }
+            PhotoClipboard.copy(jpeg: found)
+            copied = true
+            try? await Task.sleep(for: .seconds(1.5))
+            copied = false
+        }
     }
 }
 
