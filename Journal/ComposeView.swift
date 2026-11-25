@@ -6,6 +6,7 @@ struct ComposeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(AppLock.self) private var lock
+    @Environment(Session.self) private var session
 
     let original: Entry?
     let startRecording: Bool
@@ -29,7 +30,8 @@ struct ComposeView: View {
     @State private var addingPhotos = 0
     @State private var photoError: String?
     @State private var viewing: PhotoRef?
-    @FocusState private var editorFocused: Bool
+    @State private var editorFocused = false
+    @State private var clipboardHasPhoto = false
 
     init(entry: Entry?, startRecording: Bool, onSave: @escaping () -> Void) {
         original = entry
@@ -66,10 +68,9 @@ struct ComposeView: View {
                                 .padding(.top, 8)
                                 .padding(.leading, 5)
                         }
-                        TextEditor(text: $text)
-                            .frame(minHeight: 220)
-                            .focused($editorFocused)
-                            .disabled(dictation.isBusy)
+                        EntryTextEditor(text: $text, isFocused: $editorFocused, isEnabled: !dictation.isBusy) { images in
+                            Task { await addPasted(images) }
+                        }
                     }
                     dictationControls
                 }
@@ -138,6 +139,13 @@ struct ComposeView: View {
             .fullScreenCover(item: $viewing) { ref in
                 PhotoViewer(id: ref.id, unsaved: newPhotos[ref.id])
             }
+            .onAppear { clipboardHasPhoto = PhotoClipboard.hasPhotos }
+            .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in
+                clipboardHasPhoto = PhotoClipboard.hasPhotos
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { clipboardHasPhoto = PhotoClipboard.hasPhotos }
+            }
             .onChange(of: dictation.transcript) { _, transcript in
                 guard !transcript.isEmpty else { return }
                 let separator = textBeforeDictation.isEmpty || textBeforeDictation.hasSuffix("\n") ? "" : " "
@@ -201,6 +209,9 @@ struct ComposeView: View {
                                 .frame(width: 96, height: 96)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .onTapGesture { viewing = PhotoRef(id: id) }
+                                .contextMenu {
+                                    Button("Copy", systemImage: "doc.on.doc") { copyPhoto(id) }
+                                }
                                 .overlay(alignment: .topTrailing) {
                                     Button {
                                         withAnimation { removePhoto(id) }
@@ -234,6 +245,12 @@ struct ComposeView: View {
                         Button("Take Photo", systemImage: "camera") {
                             hideKeyboard()
                             showCamera = true
+                        }
+                    }
+                    if clipboardHasPhoto {
+                        Button("Paste Photo", systemImage: "doc.on.clipboard") {
+                            let images = PhotoClipboard.photos()
+                            Task { await addPasted(images) }
                         }
                     }
                 } label: {
@@ -273,6 +290,30 @@ struct ComposeView: View {
         defer { addingPhotos -= 1 }
         let jpeg = await Task.detached(priority: .userInitiated) { PhotoProcessing.jpeg(from: image) }.value
         append(jpeg)
+    }
+
+    private func addPasted(_ images: [UIImage]) async {
+        guard !images.isEmpty else { return }
+        guard photos.count < Entry.maxPhotos else {
+            photoError = "This entry already has \(Entry.maxPhotos) photos."
+            return
+        }
+        addingPhotos += images.count
+        for image in images {
+            defer { addingPhotos -= 1 }
+            guard photos.count < Entry.maxPhotos else { continue }
+            let jpeg = await Task.detached(priority: .userInitiated) { PhotoProcessing.jpeg(from: image) }.value
+            append(jpeg)
+        }
+    }
+
+    private func copyPhoto(_ id: UUID) {
+        Task {
+            let found: Data? = if let unsaved = newPhotos[id] { unsaved } else {
+                await store.photoData(id, remote: SessionRemote(session: session))
+            }
+            if let found { PhotoClipboard.copy(jpeg: found) } else { photoError = "Couldn't copy that photo." }
+        }
     }
 
     private func append(_ jpeg: Data?) {
